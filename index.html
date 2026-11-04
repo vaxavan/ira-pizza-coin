@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Пиццерия «Пиццакоин»</title>
+<title>Ира Пицца Коин</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -529,7 +529,7 @@ li.CodeMirror-hint-active { background: var(--ink); color: var(--paper); } li.Co
 
 <div class="wrap">
   <header class="sign">
-    <h1>Пиццерия<br>«Пиццакоин»</h1>
+    <h1>Ира<br>Пицца Коин</h1>
     <div class="wallet" aria-live="polite"><span class="coin">П</span><span id="wallet">0</span></div>
   </header>
   <p class="lede">Пиццерии нужна автоматика. Каждый заказ — маленькая программа на Python. Напиши её, нажми «Сдать заказ», и пиццерия проверит программу на нескольких новых днях работы. Все дни прошли — на пиццу падает новый слой. Пять заказов, и пицца уходит в печь.</p>
@@ -1126,7 +1126,7 @@ window.ReadInput = (function () {
     $("step-cap").textContent = done < ORDERS.length ? `Заказ ${done + 1} из ${ORDERS.length}` : "Все заказы выполнены";
     $("finale").classList.toggle("locked", done < ORDERS.length);
     $("finale-text").textContent = done < ORDERS.length ? "Откроется, когда пицца выйдет из печи."
-      : "«Пиццакоин» растёт: теперь это сеть пиццерий на карте города. Красные кварталы — самые голодные. Сколько пицц продано в любом прямоугольнике карты — и как ответить на миллион таких вопросов сразу? Табло на печи станет двумерным. Приходи на занятие.";
+      : "«Ира Пицца Коин» растёт: теперь это сеть пиццерий на карте города. Красные кварталы — самые голодные. Сколько пицц продано в любом прямоугольнике карты — и как ответить на миллион таких вопросов сразу? Табло на печи станет двумерным. Приходи на занятие.";
     if (animate) { target = done; drop = 0; if (done === ORDERS.length) bake = 0.0001; }
     if (animate && done < ORDERS.length && !holdScroll) setTimeout(() => $("order-" + (done + 1)).scrollIntoView({ behavior: "smooth", block: "start" }), 1400);
   }
