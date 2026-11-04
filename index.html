@@ -1,0 +1,1203 @@
+<!doctype html>
+<html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Пиццерия «Пиццакоин»</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik+Mono+One&family=Rubik:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+/* Layout: kitchen counter — the pizza on its peel up top, order tickets on a rail below; each ticket is a tiny Python job. One deliberate world: a daytime pizzeria. */
+:root {
+  --wall: #2F5D50; --wall-2: #284F44;
+  --counter: #E9D8B4; --paper: #FFFDF6; --tape: #F3EEE2;
+  --ink: #23201C; --ink-2: #6B6358;
+  --tomato: #D8432E; --cheese: #F4C542; --ok: #2E8B57;
+  --code-bg: #1F2A26; --code-ink: #E9F2EC;
+  --display: "Rubik Mono One", "Arial Black", Impact, sans-serif;
+  --body: "Rubik", "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--wall); }
+body { margin: 0; color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.5; background-color: var(--wall);
+  background-image: linear-gradient(var(--wall-2) 2px, transparent 2px), linear-gradient(90deg, var(--wall-2) 2px, transparent 2px); background-size: 44px 44px; }
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 24px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.sign { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; color: var(--paper); }
+.sign h1 { font-family: var(--display); font-weight: 400; font-size: clamp(26px, 6vw, 46px); line-height: 1.05; margin: 0; text-wrap: balance; text-shadow: 3px 3px 0 var(--tomato); }
+.wallet { margin-left: auto; display: flex; align-items: center; gap: 10px; background: var(--ink); color: var(--cheese); border-radius: 999px; padding: 8px 16px 8px 8px;
+  font-family: var(--mono); font-weight: 700; font-size: 20px; font-variant-numeric: tabular-nums; }
+.coin { width: 30px; height: 30px; border-radius: 50%; background: var(--cheese); border: 3px solid #C99A1E; display: grid; place-items: center; color: #8A6410; font-family: var(--display); font-size: 12px; }
+.lede { color: #D9E7E1; max-width: 64ch; margin: 10px 0 0; }
+.rule { color: #E8F0EC; max-width: 64ch; margin: 10px 0 0; font-size: 15px; background: rgba(255,253,246,.08); border-radius: 10px; padding: 8px 12px; }
+.rule b { color: var(--cheese); } .rule code { font-family: var(--mono); color: var(--cheese); }
+.py-status { color: #B8CCC4; font-family: var(--mono); font-size: 13px; margin-top: 6px; }
+
+.stage { margin-top: 22px; background: var(--counter); border-radius: 20px; overflow: hidden; position: relative; box-shadow: 0 10px 0 #C8B48C; }
+canvas { display: block; width: 100%; height: auto; max-width: 100%; }
+.stage-cap { position: absolute; left: 16px; bottom: 12px; right: 16px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-family: var(--mono); font-size: 13px; color: var(--ink-2); pointer-events: none; }
+
+.rail { margin-top: 36px; position: relative; padding-top: 18px; }
+.rail::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 10px; border-radius: 5px; background: linear-gradient(#C9CED1, #8E969B); }
+.tickets { display: flex; flex-direction: column; gap: 22px; }
+.ticket { background: var(--paper); border-radius: 4px; padding: 20px 22px 24px; position: relative; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.ticket::before { content: ""; position: absolute; top: -14px; left: 28px; width: 34px; height: 24px; border-radius: 4px; background: #8E969B; }
+.t-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.t-no { font-family: var(--mono); color: var(--ink-2); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+.t-title { font-family: var(--display); font-weight: 400; font-size: 20px; margin: 0; text-wrap: balance; }
+.t-state { margin-left: auto; font-family: var(--mono); font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+.st-open { background: var(--cheese); } .st-done { background: var(--ok); color: #fff; } .st-lock { background: #E4DED2; color: var(--ink-2); }
+.t-story { margin: 10px 0 0; max-width: 66ch; }
+.io { margin-top: 14px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 24px; max-width: 100%; }
+.io section { min-width: 0; }
+.io h3 { font-family: var(--body); font-weight: 700; font-size: 15px; margin: 10px 0 4px; }
+.io p { margin: 0 0 4px; font-size: 15px; }
+.ex-wrap { overflow-x: auto; }
+.ex { border-collapse: collapse; font-size: 14px; }
+.ex th { text-align: left; font-weight: 500; color: var(--ink-2); padding: 4px 10px; border: 1px solid #D8D0BE; background: var(--tape); }
+.ex td { vertical-align: top; padding: 6px 10px; border: 1px solid #D8D0BE; }
+.ex pre { margin: 0; font-family: var(--mono); font-size: 14px; white-space: pre; }
+.expl { color: var(--ink-2); margin-top: 6px !important; } .expl b { color: var(--ink); font-weight: 500; }
+.tl { font-size: 13px !important; color: var(--ink-2); }
+.readmap { background: var(--tape); border-radius: 8px; padding: 2px 12px 10px; align-self: start; }
+.ri-i { margin-left: 6px; font: 600 13px var(--body); border: 0; border-radius: 999px; padding: 2px 10px; background: var(--ink); color: var(--paper); cursor: pointer; vertical-align: 2px; }
+.ri-i:focus-visible { outline: 3px solid var(--cheese); outline-offset: 2px; }
+.rm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 6px; font-size: 14px; }
+.rm-in { font-family: var(--mono); background: var(--paper); border: 1px dashed #CFC6B2; border-radius: 4px; padding: 1px 6px; }
+.rm-py { font-family: var(--mono); background: var(--code-bg); color: var(--code-ink); border-radius: 4px; padding: 1px 6px; overflow-wrap: anywhere; }
+.work { margin-top: 14px; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.editor { width: 100%; min-height: 210px; resize: vertical; background: var(--code-bg); color: var(--code-ink); font-family: var(--mono); font-size: 15px; line-height: 1.55;
+  border: 0; border-radius: 10px; padding: 12px 14px; tab-size: 4; white-space: pre; overflow: auto; }
+.editor:focus-visible { outline: 3px solid var(--cheese); outline-offset: 2px; }
+/* --- codemirror.css + show-hint.css (библиотека) --- */
+/* BASICS */
+
+.CodeMirror {
+  /* Set height, width, borders, and global font properties here */
+  font-family: monospace;
+  height: 300px;
+  color: black;
+  direction: ltr;
+}
+
+/* PADDING */
+
+.CodeMirror-lines {
+  padding: 4px 0; /* Vertical padding around content */
+}
+.CodeMirror pre.CodeMirror-line,
+.CodeMirror pre.CodeMirror-line-like {
+  padding: 0 4px; /* Horizontal padding of content */
+}
+
+.CodeMirror-scrollbar-filler, .CodeMirror-gutter-filler {
+  background-color: white; /* The little square between H and V scrollbars */
+}
+
+/* GUTTER */
+
+.CodeMirror-gutters {
+  border-right: 1px solid #ddd;
+  background-color: #f7f7f7;
+  white-space: nowrap;
+}
+.CodeMirror-linenumbers {}
+.CodeMirror-linenumber {
+  padding: 0 3px 0 5px;
+  min-width: 20px;
+  text-align: right;
+  color: #999;
+  white-space: nowrap;
+}
+
+.CodeMirror-guttermarker { color: black; }
+.CodeMirror-guttermarker-subtle { color: #999; }
+
+/* CURSOR */
+
+.CodeMirror-cursor {
+  border-left: 1px solid black;
+  border-right: none;
+  width: 0;
+}
+/* Shown when moving in bi-directional text */
+.CodeMirror div.CodeMirror-secondarycursor {
+  border-left: 1px solid silver;
+}
+.cm-fat-cursor .CodeMirror-cursor {
+  width: auto;
+  border: 0 !important;
+  background: #7e7;
+}
+.cm-fat-cursor div.CodeMirror-cursors {
+  z-index: 1;
+}
+.cm-fat-cursor .CodeMirror-line::selection,
+.cm-fat-cursor .CodeMirror-line > span::selection, 
+.cm-fat-cursor .CodeMirror-line > span > span::selection { background: transparent; }
+.cm-fat-cursor .CodeMirror-line::-moz-selection,
+.cm-fat-cursor .CodeMirror-line > span::-moz-selection,
+.cm-fat-cursor .CodeMirror-line > span > span::-moz-selection { background: transparent; }
+.cm-fat-cursor { caret-color: transparent; }
+@-moz-keyframes blink {
+  0% {}
+  50% { background-color: transparent; }
+  100% {}
+}
+@-webkit-keyframes blink {
+  0% {}
+  50% { background-color: transparent; }
+  100% {}
+}
+@keyframes blink {
+  0% {}
+  50% { background-color: transparent; }
+  100% {}
+}
+
+/* Can style cursor different in overwrite (non-insert) mode */
+.CodeMirror-overwrite .CodeMirror-cursor {}
+
+.cm-tab { display: inline-block; text-decoration: inherit; }
+
+.CodeMirror-rulers {
+  position: absolute;
+  left: 0; right: 0; top: -50px; bottom: 0;
+  overflow: hidden;
+}
+.CodeMirror-ruler {
+  border-left: 1px solid #ccc;
+  top: 0; bottom: 0;
+  position: absolute;
+}
+
+/* DEFAULT THEME */
+
+.cm-s-default .cm-header {color: blue;}
+.cm-s-default .cm-quote {color: #090;}
+.cm-negative {color: #d44;}
+.cm-positive {color: #292;}
+.cm-header, .cm-strong {font-weight: bold;}
+.cm-em {font-style: italic;}
+.cm-link {text-decoration: underline;}
+.cm-strikethrough {text-decoration: line-through;}
+
+.cm-s-default .cm-keyword {color: #708;}
+.cm-s-default .cm-atom {color: #219;}
+.cm-s-default .cm-number {color: #164;}
+.cm-s-default .cm-def {color: #00f;}
+.cm-s-default .cm-variable,
+.cm-s-default .cm-punctuation,
+.cm-s-default .cm-property,
+.cm-s-default .cm-operator {}
+.cm-s-default .cm-variable-2 {color: #05a;}
+.cm-s-default .cm-variable-3, .cm-s-default .cm-type {color: #085;}
+.cm-s-default .cm-comment {color: #a50;}
+.cm-s-default .cm-string {color: #a11;}
+.cm-s-default .cm-string-2 {color: #f50;}
+.cm-s-default .cm-meta {color: #555;}
+.cm-s-default .cm-qualifier {color: #555;}
+.cm-s-default .cm-builtin {color: #30a;}
+.cm-s-default .cm-bracket {color: #997;}
+.cm-s-default .cm-tag {color: #170;}
+.cm-s-default .cm-attribute {color: #00c;}
+.cm-s-default .cm-hr {color: #999;}
+.cm-s-default .cm-link {color: #00c;}
+
+.cm-s-default .cm-error {color: #f00;}
+.cm-invalidchar {color: #f00;}
+
+.CodeMirror-composing { border-bottom: 2px solid; }
+
+/* Default styles for common addons */
+
+div.CodeMirror span.CodeMirror-matchingbracket {color: #0b0;}
+div.CodeMirror span.CodeMirror-nonmatchingbracket {color: #a22;}
+.CodeMirror-matchingtag { background: rgba(255, 150, 0, .3); }
+.CodeMirror-activeline-background {background: #e8f2ff;}
+
+/* STOP */
+
+/* The rest of this file contains styles related to the mechanics of
+   the editor. You probably shouldn't touch them. */
+
+.CodeMirror {
+  position: relative;
+  overflow: hidden;
+  background: white;
+}
+
+.CodeMirror-scroll {
+  overflow: scroll !important; /* Things will break if this is overridden */
+  /* 50px is the magic margin used to hide the element's real scrollbars */
+  /* See overflow: hidden in .CodeMirror */
+  margin-bottom: -50px; margin-right: -50px;
+  padding-bottom: 50px;
+  height: 100%;
+  outline: none; /* Prevent dragging from highlighting the element */
+  position: relative;
+  z-index: 0;
+}
+.CodeMirror-sizer {
+  position: relative;
+  border-right: 50px solid transparent;
+}
+
+/* The fake, visible scrollbars. Used to force redraw during scrolling
+   before actual scrolling happens, thus preventing shaking and
+   flickering artifacts. */
+.CodeMirror-vscrollbar, .CodeMirror-hscrollbar, .CodeMirror-scrollbar-filler, .CodeMirror-gutter-filler {
+  position: absolute;
+  z-index: 6;
+  display: none;
+  outline: none;
+}
+.CodeMirror-vscrollbar {
+  right: 0; top: 0;
+  overflow-x: hidden;
+  overflow-y: scroll;
+}
+.CodeMirror-hscrollbar {
+  bottom: 0; left: 0;
+  overflow-y: hidden;
+  overflow-x: scroll;
+}
+.CodeMirror-scrollbar-filler {
+  right: 0; bottom: 0;
+}
+.CodeMirror-gutter-filler {
+  left: 0; bottom: 0;
+}
+
+.CodeMirror-gutters {
+  position: absolute; left: 0; top: 0;
+  min-height: 100%;
+  z-index: 3;
+}
+.CodeMirror-gutter {
+  white-space: normal;
+  height: 100%;
+  display: inline-block;
+  vertical-align: top;
+  margin-bottom: -50px;
+}
+.CodeMirror-gutter-wrapper {
+  position: absolute;
+  z-index: 4;
+  background: none !important;
+  border: none !important;
+}
+.CodeMirror-gutter-background {
+  position: absolute;
+  top: 0; bottom: 0;
+  z-index: 4;
+}
+.CodeMirror-gutter-elt {
+  position: absolute;
+  cursor: default;
+  z-index: 4;
+}
+.CodeMirror-gutter-wrapper ::selection { background-color: transparent }
+.CodeMirror-gutter-wrapper ::-moz-selection { background-color: transparent }
+
+.CodeMirror-lines {
+  cursor: text;
+  min-height: 1px; /* prevents collapsing before first draw */
+}
+.CodeMirror pre.CodeMirror-line,
+.CodeMirror pre.CodeMirror-line-like {
+  /* Reset some styles that the rest of the page might have set */
+  -moz-border-radius: 0; -webkit-border-radius: 0; border-radius: 0;
+  border-width: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  margin: 0;
+  white-space: pre;
+  word-wrap: normal;
+  line-height: inherit;
+  color: inherit;
+  z-index: 2;
+  position: relative;
+  overflow: visible;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-variant-ligatures: contextual;
+  font-variant-ligatures: contextual;
+}
+.CodeMirror-wrap pre.CodeMirror-line,
+.CodeMirror-wrap pre.CodeMirror-line-like {
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  word-break: normal;
+}
+
+.CodeMirror-linebackground {
+  position: absolute;
+  left: 0; right: 0; top: 0; bottom: 0;
+  z-index: 0;
+}
+
+.CodeMirror-linewidget {
+  position: relative;
+  z-index: 2;
+  padding: 0.1px; /* Force widget margins to stay inside of the container */
+}
+
+.CodeMirror-widget {}
+
+.CodeMirror-rtl pre { direction: rtl; }
+
+.CodeMirror-code {
+  outline: none;
+}
+
+/* Force content-box sizing for the elements where we expect it */
+.CodeMirror-scroll,
+.CodeMirror-sizer,
+.CodeMirror-gutter,
+.CodeMirror-gutters,
+.CodeMirror-linenumber {
+  -moz-box-sizing: content-box;
+  box-sizing: content-box;
+}
+
+.CodeMirror-measure {
+  position: absolute;
+  width: 100%;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.CodeMirror-cursor {
+  position: absolute;
+  pointer-events: none;
+}
+.CodeMirror-measure pre { position: static; }
+
+div.CodeMirror-cursors {
+  visibility: hidden;
+  position: relative;
+  z-index: 3;
+}
+div.CodeMirror-dragcursors {
+  visibility: visible;
+}
+
+.CodeMirror-focused div.CodeMirror-cursors {
+  visibility: visible;
+}
+
+.CodeMirror-selected { background: #d9d9d9; }
+.CodeMirror-focused .CodeMirror-selected { background: #d7d4f0; }
+.CodeMirror-crosshair { cursor: crosshair; }
+.CodeMirror-line::selection, .CodeMirror-line > span::selection, .CodeMirror-line > span > span::selection { background: #d7d4f0; }
+.CodeMirror-line::-moz-selection, .CodeMirror-line > span::-moz-selection, .CodeMirror-line > span > span::-moz-selection { background: #d7d4f0; }
+
+.cm-searching {
+  background-color: #ffa;
+  background-color: rgba(255, 255, 0, .4);
+}
+
+/* Used to force a border model for a node */
+.cm-force-border { padding-right: .1px; }
+
+@media print {
+  /* Hide the cursor when printing */
+  .CodeMirror div.CodeMirror-cursors {
+    visibility: hidden;
+  }
+}
+
+/* See issue #2901 */
+.cm-tab-wrap-hack:after { content: ''; }
+
+/* Help users use markselection to safely style text background */
+span.CodeMirror-selectedtext { background: none; }
+.CodeMirror-hints {
+  position: absolute;
+  z-index: 10;
+  overflow: hidden;
+  list-style: none;
+
+  margin: 0;
+  padding: 2px;
+
+  -webkit-box-shadow: 2px 3px 5px rgba(0,0,0,.2);
+  -moz-box-shadow: 2px 3px 5px rgba(0,0,0,.2);
+  box-shadow: 2px 3px 5px rgba(0,0,0,.2);
+  border-radius: 3px;
+  border: 1px solid silver;
+
+  background: white;
+  font-size: 90%;
+  font-family: monospace;
+
+  max-height: 20em;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.CodeMirror-hint {
+  margin: 0;
+  padding: 0 4px;
+  border-radius: 2px;
+  white-space: pre;
+  color: black;
+  cursor: pointer;
+}
+
+li.CodeMirror-hint-active {
+  background: #08f;
+  color: white;
+}
+
+.row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.btn { font: inherit; border: 0; border-radius: 10px; padding: 10px 16px; font-weight: 700; cursor: pointer; background: var(--ink); color: var(--paper); }
+.btn:hover { filter: brightness(1.15); } .btn:disabled { opacity: .5; cursor: progress; }
+.btn-ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+.btn-hot { background: var(--tomato); }
+.btn:focus-visible { outline: 3px solid var(--cheese); outline-offset: 2px; }
+.hint { font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+details.tip { margin-top: 8px; font-size: 14px; } details.tip summary { cursor: pointer; color: var(--ink-2); }
+
+.run { background: var(--tape); border-radius: 10px; padding: 12px; min-height: 210px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.run-empty { color: var(--ink-2); font-size: 14px; margin: auto 0; text-align: center; }
+.test { background: var(--paper); border-radius: 8px; padding: 10px; }
+.test-h { display: flex; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: 13px; font-weight: 700; }
+.tiles { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 8px; }
+.tile { min-width: 30px; padding: 2px 4px; text-align: center; border-radius: 4px; background: #E4DED2; color: var(--ink-2); font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; transition: background .15s; }
+.tile.lit { background: var(--cheese); color: var(--ink); }
+.tile.shift { box-shadow: inset 0 0 0 2px var(--tomato); }
+.meter { margin-top: 8px; font-family: var(--mono); font-size: 13px; color: var(--ink-2); }
+.meter b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.verdict { margin-top: 6px; font-size: 14px; }
+.verdict.ok { color: var(--ok); font-weight: 700; } .verdict.bad { color: var(--tomato); font-weight: 700; }
+.out { font-family: var(--mono); font-size: 13px; background: var(--code-bg); color: var(--code-ink); border-radius: 6px; padding: 6px 8px; margin-top: 6px; white-space: pre-wrap; max-height: 120px; overflow: auto; }
+.summary { font-weight: 700; padding: 8px 10px; border-radius: 8px; }
+.summary.star { background: #FFF3C4; color: var(--ink); font-weight: 500; }
+.summary.ok { background: #DDF0E4; color: var(--ok); } .summary.bad { background: #FBE1DC; color: var(--tomato); }
+
+.ticket.locked .t-body { filter: blur(3px); opacity: .45; pointer-events: none; user-select: none; }
+.solved-note { display: none; margin-top: 12px; font-family: var(--mono); color: var(--ok); font-weight: 700; }
+.ticket.done .solved-note { display: block; }
+
+.finale { margin-top: 36px; background: var(--ink); color: var(--paper); border-radius: 20px; padding: 26px 24px; }
+.finale h2 { font-family: var(--display); font-weight: 400; color: var(--cheese); margin: 0 0 8px; font-size: clamp(20px, 4vw, 30px); }
+.finale p { max-width: 62ch; margin: 8px 0 0; color: #E8E1D3; }
+.city { margin-top: 16px; display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; max-width: 360px; }
+.city span { aspect-ratio: 1; border-radius: 3px; background: #3A352F; display: grid; place-items: center; font-family: var(--mono); font-size: 11px; color: #9C9384; }
+.city span.hot { background: var(--tomato); color: #fff; }
+.finale.locked .city { filter: blur(5px); }
+.reset { margin-top: 28px; text-align: center; }
+.reset button { background: none; border: 0; color: #B8CCC4; text-decoration: underline; cursor: pointer; font: inherit; font-size: 13px; }
+@media (max-width: 720px) {
+  .work, .io { grid-template-columns: minmax(0, 1fr); }
+  .wallet { margin-left: 0; } .t-state { margin-left: 0; }
+  .ticket { padding: 18px 14px 20px; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* CodeMirror 5 — тёмная «кухонная» тема поверх стилей библиотеки */
+.ticket .CodeMirror { height: auto; min-height: 210px; border-radius: 10px; background: var(--code-bg); color: var(--code-ink); font-family: var(--mono); font-size: 15px; line-height: 1.55; padding: 6px 0; }
+.CodeMirror-scroll { min-height: 200px; }
+.ticket .CodeMirror-gutters { background: var(--code-bg); border-right: 1px solid #34413B; }
+.CodeMirror-linenumber { color: #6E8078; }
+.CodeMirror-cursor { border-left: 2px solid var(--cheese); }
+.CodeMirror-selected, .CodeMirror-focused .CodeMirror-selected { background: #3A4A43; }
+.CodeMirror-focused { outline: 3px solid var(--cheese); outline-offset: 2px; }
+.cm-s-default .cm-keyword { color: #FF9E7A; } .cm-s-default .cm-builtin { color: #8BD3E6; } .cm-s-default .cm-number { color: #F4C542; }
+.cm-s-default .cm-string { color: #B5E08B; } .cm-s-default .cm-comment { color: #8A9A92; font-style: italic; } .cm-s-default .cm-variable { color: var(--code-ink); }
+.cm-s-default .cm-def { color: #F4C542; } .cm-s-default .cm-operator { color: #E9F2EC; } .cm-s-default .cm-property { color: #CDE8D8; }
+.CodeMirror-matchingbracket { color: var(--cheese) !important; text-decoration: underline; }
+.dbg-line { background: rgba(244,197,66,.22); }
+.err-line { background: rgba(216,67,46,.28); }
+.CodeMirror-hints { font-family: var(--mono); font-size: 14px; border-radius: 8px; z-index: 50; }
+.CodeMirror-hint { display: flex; gap: 10px; justify-content: space-between; color: var(--ink); }
+.CodeMirror-hint .hn { color: var(--ink-2); font-family: var(--body); font-size: 12px; }
+li.CodeMirror-hint-active { background: var(--ink); color: var(--paper); } li.CodeMirror-hint-active .hn { color: #D9E7E1; }
+.dbg-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.dbg-bar .btn { padding: 6px 10px; font-size: 14px; }
+.dbg-pos { margin-left: auto; font-family: var(--mono); font-size: 13px; color: var(--ink-2); }
+.vars { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
+.vars td { padding: 3px 6px; border-bottom: 1px solid #E4DED2; vertical-align: top; word-break: break-word; }
+.vars td:first-child { font-weight: 700; white-space: nowrap; }
+.vars tr.chg td { background: #FFF3C4; }
+.vars td.ty { color: var(--ink-2); white-space: nowrap; }
+</style>
+
+<div class="wrap">
+  <header class="sign">
+    <h1>Пиццерия<br>«Пиццакоин»</h1>
+    <div class="wallet" aria-live="polite"><span class="coin">П</span><span id="wallet">0</span></div>
+  </header>
+  <p class="lede">Пиццерии нужна автоматика. Каждый заказ — маленькая программа на Python. Напиши её, нажми «Сдать заказ», и пиццерия проверит программу на нескольких новых днях работы. Все дни прошли — на пиццу падает новый слой. Пять заказов, и пицца уходит в печь.</p>
+  <p class="rule"><b>Правило кухни:</b> переменные называем так, чтобы было понятно, что внутри: <code>hours</code>, <code>pizzas</code>, <code>total</code>, <code>prefix</code> — а не <code>n</code>, <code>a</code>, <code>s</code>, <code>p</code>. По-английски, маленькими буквами, слова через <code>_</code>: <code>last_hour</code>.</p>
+  <p class="py-status" id="py-status">Python загружается…</p>
+
+  <div class="stage">
+    <canvas id="scene" width="960" height="380" aria-label="Пицца на лопате у печи"></canvas>
+    <div class="stage-cap"><span id="layer-cap">Тесто раскатано</span><span id="step-cap">Заказ 1 из 5</span></div>
+  </div>
+
+  <section class="rail" aria-label="Заказы"><div class="tickets" id="tickets"></div></section>
+
+  <section class="finale locked" id="finale">
+    <h2>В следующей серии</h2>
+    <p id="finale-text">Откроется, когда пицца выйдет из печи.</p>
+    <div class="city" id="city" aria-hidden="true"></div>
+  </section>
+  <div class="reset"><button id="reset" type="button">Начать заново на этом устройстве</button></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/python/python.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/show-hint.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/matchbrackets.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/closebrackets.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt-stdlib.js"></script>
+<script>
+// «ⓘ Как Python читает строку с числами» — как в отладчике: шаг за шагом, что вычислилось и что лежит в переменных.
+//   hours = int(input())                       "5" → 5
+//   pizzas = list(map(int, input().split()))   "3 7 2 9 4" → слова → конвейер int → [3, 7, 2, 9, 4]
+// Один файл и для сайта (страница задачи), и для игры «Пиццакоин» (вставлен в неё целиком).
+// ReadInput.open({ line: "3 7 2 9 4", nLine: "5", aName: "pizzas", nName: "hours" }) — всё, кроме line, можно не передавать.
+window.ReadInput = (function () {
+  const CSS = `
+.ri-ov{position:fixed;inset:0;z-index:300;background:rgba(20,24,32,.55);display:grid;place-items:center;padding:16px}
+.ri-card{--ri-bg:#FFFDF8;--ri-ink:#1E2A47;--ri-mute:#5F6678;--ri-line:#E3DDD0;--ri-str:#FCE7C8;--ri-str-b:#E2A24C;--ri-num:#D9EDE1;--ri-num-b:#2E8B57;--ri-code:#1F2A26;--ri-code-ink:#E9F2EC;--ri-hi:#F4C542;
+  background:var(--ri-bg);color:var(--ri-ink);border-radius:18px;width:min(760px,100%);max-height:calc(100% - 8px);overflow:auto;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.3);font:16px/1.45 "Nunito","Rubik",system-ui,Arial,sans-serif}
+.ri-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.ri-top h2{margin:0;font-size:19px}
+.ri-x{border:0;background:none;font-size:22px;cursor:pointer;color:var(--ri-mute);line-height:1}
+.ri-code{margin-top:12px;background:var(--ri-code);color:var(--ri-code-ink);border-radius:10px;padding:8px 0;font:15px/1.7 "JetBrains Mono",Consolas,monospace;overflow-x:auto}
+.ri-ln{display:flex;gap:10px;padding:0 14px;white-space:pre;opacity:.45;transition:opacity .2s,background .2s}
+.ri-ln.cur{opacity:1;background:rgba(244,197,66,.14)}
+.ri-ln.done{opacity:.8}
+.ri-ln b{color:var(--ri-hi);width:1em;font-weight:400}
+.ri-ln span.hi{background:var(--ri-hi);color:#1E2A47;border-radius:4px}
+.ri-panes{margin-top:12px;display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1fr);gap:12px}
+.ri-pane{border:1px solid var(--ri-line);border-radius:10px;padding:8px 10px;min-width:0}
+.ri-pane h3{margin:0 0 6px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ri-mute)}
+.ri-ev{display:flex;flex-direction:column;gap:2px}
+.ri-expr{font:13px "JetBrains Mono",Consolas,monospace;color:var(--ri-mute);margin-top:6px;overflow-x:auto;white-space:nowrap}
+.ri-to{display:none}
+.ri-str{display:inline-flex;align-items:center;white-space:nowrap}
+.ri-val{display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-width:0}
+.ri-row{opacity:0;transform:translateY(-6px);transition:opacity .3s,transform .3s}.ri-row.in{opacity:1;transform:none}
+.ri-tag{font:11px "JetBrains Mono",Consolas,monospace;color:var(--ri-mute);opacity:.85;white-space:nowrap}
+
+.ri-chars{display:inline-flex;font:15px "JetBrains Mono",Consolas,monospace}
+.ri-ch{display:inline-grid;place-items:center;min-width:20px;height:28px;background:var(--ri-str);border-top:2px solid var(--ri-str-b);border-bottom:2px solid var(--ri-str-b)}
+.ri-ch.sp{color:#B98A4E;font-size:12px}
+.ri-q{color:var(--ri-str-b);font:700 17px "JetBrains Mono",monospace}
+.ri-br{font:700 19px "JetBrains Mono",monospace;color:var(--ri-mute)}
+.ri-box{display:inline-grid;place-items:center;min-width:32px;height:30px;padding:0 6px;border-radius:6px;font:700 15px "JetBrains Mono",Consolas,monospace;opacity:0;transform:scale(.85);transition:opacity .3s,transform .3s}
+.ri-box.in{opacity:1;transform:none}
+.ri-box.s{background:var(--ri-str);border:2px solid var(--ri-str-b)}
+.ri-box.n{background:var(--ri-num);border:2px solid var(--ri-num-b)}
+.ri-machine{display:inline-grid;place-items:center;width:44px;height:30px;border-radius:8px;background:var(--ri-ink);color:#fff;font:700 13px "JetBrains Mono",monospace}
+.ri-machine.go{animation:ri-pump .4s ease-in-out}
+@keyframes ri-pump{50%{transform:scale(1.15)}}
+.ri-vars{display:flex;flex-direction:column;gap:6px;font:14px "JetBrains Mono",Consolas,monospace}
+.ri-var{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;padding:2px 4px;border-radius:6px}
+.ri-var.new{background:#FFF3C4}
+.ri-var i{font-style:normal;color:var(--ri-mute)}
+.ri-empty{color:var(--ri-mute);font:13px "Nunito",system-ui,sans-serif}
+.ri-say{margin-top:12px;border-radius:12px;background:#FFF3C4;padding:10px 14px;min-height:64px}
+.ri-say b{display:block;font-size:20px;line-height:1.25;color:var(--ri-ink)}
+.ri-say small{display:block;margin-top:4px;font-size:13px;color:var(--ri-mute)}
+.ri-say code{font-family:"JetBrains Mono",Consolas,monospace;font-size:.95em}
+.ri-nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.ri-count{margin-right:auto;font:13px "JetBrains Mono",monospace;color:var(--ri-mute)}
+.ri-btn{font:700 15px "Nunito",system-ui,sans-serif;border:0;border-radius:10px;padding:8px 14px;cursor:pointer;background:var(--ri-ink);color:#fff}
+.ri-btn.g{background:transparent;color:var(--ri-ink);box-shadow:inset 0 0 0 2px var(--ri-line)}
+.ri-btn:disabled{opacity:.4;cursor:default}
+.ri-btn:focus-visible,.ri-x:focus-visible{outline:3px solid var(--ri-hi);outline-offset:2px}
+@media (max-width:620px){.ri-panes{grid-template-columns:minmax(0,1fr)}}
+@media (prefers-reduced-motion:reduce){.ri-box,.ri-row{transition:none}.ri-machine.go{animation:none}}
+`;
+  const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const wait = (ms) => new Promise((r) => setTimeout(r, reduce ? 0 : ms));
+  let styled = false;
+
+  function open(opts) {
+    if (!styled) { const st = document.createElement("style"); st.textContent = CSS; document.head.appendChild(st); styled = true; }
+    const line = String((opts && opts.line) || "3 7 2 9 4").trim().replace(/\s+/g, " ");
+    const words = line.split(" ");
+    const nums = words.map((w) => (/^-?\d+$/.test(w) ? String(parseInt(w, 10)) : w));
+    const nLine = opts && opts.nLine != null && /^-?\d+$/.test(String(opts.nLine).trim()) ? String(opts.nLine).trim() : "";
+    const A = (opts && opts.aName) || "a", N = (opts && opts.nName) || "n";
+
+    // Шаги отладчика. part — что подсвечено в строке кода; row — что появилось в «Вычисляем»; set — переменная после шага.
+    const steps = [];
+    if (nLine) {
+      steps.push({ ln: 0, part: "input", row: "nInput" });
+      steps.push({ ln: 0, part: "int", row: "nInt", set: [N, nLine, "int"] });
+    }
+    steps.push({ ln: 1, part: "input", row: "input" });
+    steps.push({ ln: 1, part: "split", row: "split" });
+    steps.push({ ln: 1, part: "map", row: "map" });
+    steps.push({ ln: 1, part: "list", row: "list", set: [A, "[" + nums.join(", ") + "]", "list"] });
+    let k = 0, run = 0;
+
+    const ov = document.createElement("div"); ov.className = "ri-ov";
+    ov.innerHTML = `<div class="ri-card" role="dialog" aria-modal="true" aria-label="Как Python читает строку с числами">
+      <div class="ri-top"><h2>🐞 Debug: как читается ввод</h2><button class="ri-x" type="button" aria-label="Закрыть">✕</button></div>
+      <div class="ri-code"></div>
+      <div class="ri-panes"><div class="ri-pane"><h3>Вычисляем</h3><div class="ri-ev" aria-live="polite"></div></div>
+        <div class="ri-pane"><h3>Переменные</h3><div class="ri-vars"></div></div></div>
+      <div class="ri-say" aria-live="polite"></div>
+      <div class="ri-nav"><span class="ri-count"></span><button class="ri-btn g" type="button" data-b>◀ Назад</button><button class="ri-btn g" type="button" data-r>⟲ Заново</button><button class="ri-btn" type="button" data-f>Шаг ▶</button></div></div>`;
+    document.body.appendChild(ov);
+    const $ = (s) => ov.querySelector(s);
+    const close = () => { run++; ov.remove(); document.removeEventListener("keydown", onKey); };
+    const onKey = (e) => {
+      if (e.key === "Escape") close();
+      if (e.key === "ArrowRight" || e.key === "F8") { e.preventDefault(); forward(); }
+      if (e.key === "ArrowLeft") go(k - 1);
+    };
+    document.addEventListener("keydown", onKey);
+    $(".ri-x").onclick = close;
+    ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+    $("[data-b]").onclick = () => go(k - 1);
+    $("[data-r]").onclick = () => go(0);
+    $("[data-f]").onclick = forward;
+    function forward() { k === steps.length - 1 ? close() : go(k + 1); }
+    function go(nk) { k = Math.max(0, Math.min(steps.length - 1, nk)); show(); }
+
+    const P = (on, t) => `<span class="${on ? "hi" : ""}">${esc(t)}</span>`;
+    function codeHtml(st) {
+      const l0 = st.ln === 0, l1 = st.ln === 1, p = st.part;
+      const lines = [];
+      if (nLine) lines.push(`<div class="ri-ln ${l0 ? "cur" : "done"}"><b>${l0 ? "▶" : ""}</b><span>${esc(N)} = ${P(l0 && p === "int", "int(")}${P(l0, "input()")}${P(l0 && p === "int", ")")}</span></div>`);
+      lines.push(`<div class="ri-ln ${l1 ? "cur" : ""}"><b>${l1 ? "▶" : ""}</b><span>${esc(A)} = ${P(l1 && p === "list", "list(")}${P(l1 && p === "map", "map(int, ")}${P(l1 && p === "input", "input()")}${P(l1 && p === "split", ".split()")}${P(l1 && p === "map", ")")}${P(l1 && p === "list", ")")}</span></div>`);
+      return lines.join("");
+    }
+    const chars = (s) => `<span class="ri-str"><span class="ri-q">"</span><span class="ri-chars">${[...s].map((c) => c === " " ? '<span class="ri-ch sp" title="пробел">␣</span>' : `<span class="ri-ch">${esc(c)}</span>`).join("")}</span><span class="ri-q">"</span></span>`;
+    const boxes = (arr, cls, quote, shown) => arr.map((w) => `<span class="ri-box ${cls}${shown ? " in" : ""}">${quote ? "'" + esc(w) + "'" : esc(w)}</span>`).join("");
+    const row = (expr, val, tag, id) => `<span class="ri-expr ri-row" data-r="${id}">${expr} →</span><span class="ri-to ri-row" data-r="${id}">→</span><span class="ri-val ri-row" data-r="${id}">${val} ${tag}</span>`;
+    const ROWS = {
+      nInput: () => row("input()", chars(nLine), '<span class="ri-tag">str</span>', "nInput"),
+      nInt: () => row("int(input())", `<span class="ri-box n in">${esc(nLine)}</span>`, '<span class="ri-tag">int</span>', "nInt"),
+      input: () => row("input()", chars(line), '<span class="ri-tag">str</span>', "input"),
+      split: (live) => row("input().split()", `<span class="ri-br">[</span>${boxes(words, "s", true, !live)}<span class="ri-br">]</span>`, '<span class="ri-tag">list из str</span>', "split"),
+      map: (live) => row("map(int, input().split())", `<span class="ri-mq">${live ? boxes(words, "s", true, true) : ""}</span><span class="ri-machine">int</span><span class="ri-mo">${live ? "" : boxes(nums, "n", false, true)}</span>`, '<span class="ri-tag">map</span>', "map"),
+      list: (live) => row("list(map(int, input().split()))", `<span class="ri-br">[</span>${boxes(nums, "n", false, !live)}<span class="ri-br">]</span>`, '<span class="ri-tag">list из int</span>', "list"),
+    };
+    // Главная мысль шага — крупно; дополнительное — мелко под ней.
+    const sum = nums.every((x) => /^-?\d+$/.test(x)) ? nums.reduce((a, b) => a + +b, 0) : null;
+    const SAY = {
+      nInput: [`Это текст "${esc(nLine)}", а не число`, `С текстом не посчитать: <code>"${esc(nLine)}" + "1"</code> даст <code>"${esc(nLine)}1"</code>.`],
+      nInt: [`Теперь это число ${esc(nLine)} — с ним можно считать`, `<code>int(…)</code> превращает текст в целое число. Оно сохраняется в <code>${esc(N)}</code>.`],
+      input: ["Вся строка — один текст, вместе с пробелами", `С текстом не посчитать: <code>"3" + "7"</code> даст <code>"37"</code>, а не 10.`],
+      split: [`Разрезали по пробелам: ${words.length} слов, но это всё ещё текст`, "Кавычки на месте — значит, это строки, не числа."],
+      map: ["Каждое слово превращается в число", `<code>map</code> — ещё не список, а конвейер: у него нельзя спросить <code>[0]</code> или <code>len</code>.`],
+      list: [`Готово: ${esc(A)} — список чисел`, `<code>${esc(A)}[0]</code> = ${esc(nums[0])}${sum !== null ? `, <code>sum(${esc(A)})</code> = ${sum}` : ""}. Можно перебирать циклом и брать срезы.`],
+    };
+
+    async function show() {
+      const my = ++run, st = steps[k];
+      $(".ri-code").innerHTML = codeHtml(st);
+      $(".ri-count").textContent = `Шаг ${k + 1} из ${steps.length}`;
+      $("[data-b]").disabled = k === 0;
+      $("[data-f]").textContent = k === steps.length - 1 ? "Готово ✓" : "Шаг ▶";
+      // «Вычисляем»: шаги текущей строки кода; последний — живой, с анимацией
+      const sameLine = steps.slice(0, k + 1).filter((s) => s.ln === st.ln);
+      $(".ri-ev").innerHTML = sameLine.map((s, i) => ROWS[s.row](i === sameLine.length - 1)).join("");
+      $(".ri-say").innerHTML = `<b>${SAY[st.row][0]}</b><small>${SAY[st.row][1]}</small>`;
+      ov.querySelectorAll(".ri-row").forEach((el) => { if (el.dataset.r !== st.row) el.classList.add("in"); });
+      // «Переменные»: всё, что присвоено к этому шагу; новое подсвечено
+      const vars = steps.slice(0, k + 1).filter((s) => s.set);
+      $(".ri-vars").innerHTML = vars.length
+        ? vars.map((s) => `<div class="ri-var${s === st ? " new" : ""}"><b>${esc(s.set[0])}</b> = <span>${esc(s.set[1])}</span><i>${s.set[2]}</i></div>`).join("")
+        : '<span class="ri-empty">пока пусто — присваивание в конце строки</span>';
+      await wait(30); if (my !== run) return;
+      ov.querySelectorAll(`.ri-row[data-r="${st.row}"]`).forEach((el) => el.classList.add("in"));
+      if (st.row === "split" || st.row === "list") {
+        for (const b of ov.querySelectorAll(`.ri-val[data-r="${st.row}"] .ri-box`)) { await wait(140); if (my !== run) return; b.classList.add("in"); }
+      }
+      if (st.row === "map") {
+        const q = ov.querySelector(".ri-mq"), out = ov.querySelector(".ri-mo"), m = ov.querySelector(".ri-machine");
+        await wait(300);
+        for (let i = 0; i < nums.length; i++) {
+          if (my !== run) return;
+          const w = q.firstElementChild; if (w) { w.classList.remove("in"); await wait(160); w.remove(); }
+          m.classList.remove("go"); void m.offsetWidth; m.classList.add("go");
+          await wait(220); if (my !== run) return;
+          out.insertAdjacentHTML("beforeend", `<span class="ri-box n">${esc(nums[i])}</span>`);
+          const b = out.lastElementChild; void b.offsetWidth; b.classList.add("in");
+          await wait(160);
+        }
+      }
+    }
+    show();
+    $("[data-f]").focus();
+  }
+  return { open };
+})();
+
+</script>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const rint = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const pre = (a) => { const p = [0]; for (const x of a) p.push(p[p.length - 1] + x); return p; };
+  const READ = "hours = int(input())\npizzas = list(map(int, input().split()))\n";
+  const READ_C = "hours = int(input())                      # 1-я строка: сколько часов → целое число\npizzas = list(map(int, input().split()))  # 2-я строка: лента «3 7 2 9 4» → список [3, 7, 2, 9, 4]\n";
+
+  // Каждый заказ: как сделать день работы (вход), правильный ответ, и как показать день на плитках.
+  const ORDERS = [
+    { title: "Открытие", layer: "Соус", coins: 10, noSum: true,
+      story: "Первый день! Повар записывает на ленту, сколько пицц испёк за каждый час. Хозяйке нужна программа, которая в конце дня скажет, сколько пицц испечено <b>всего</b>.",
+      inLines: ["В первой строке — число N (1 ≤ N ≤ 24): сколько часов работала пиццерия.", "Во второй строке — N целых чисел от 0 до 100 через пробел: сколько пицц испекли в каждый час."], outp: "Выведите одно число — сколько пицц испекли за весь день.", explain: "3 + 7 + 2 + 9 + 4 = 25.", tl: 3, readMap: [["5", "hours = int(input())"], ["3 7 2 9 4", "pizzas = list(map(int, input().split()))"]],
+      sample: { a: [3, 7, 2, 9, 4] }, starter: READ_C + "total = 0             # копилка: сколько пицц всего\nfor elem in pizzas:  # elem — очередное число ленты: пиццы за этот час\n    total = ...\nprint(total)\n", help: "код почти готов, допиши одно место",
+      tip: "Копилка: до цикла total = 0, в цикле прибавляй к ней elem. А можно одной строкой: print(sum(pizzas)).",
+      day: () => ({ a: Array.from({ length: rint(8, 16) }, () => rint(0, 25)) }),
+      input: (d) => `${d.a.length}\n${d.a.join(" ")}\n`, answer: (d) => String(d.a.reduce((s, x) => s + x, 0)) },
+    { title: "Счётчик на печи", layer: "Сыр", coins: 20,
+      story: "На печь повесили табло. В конце каждого часа оно должно показывать, сколько пицц испечено <b>с самого утра</b>. Напиши программу для табло: выведи все его показания за день.",
+      inLines: ["В первой строке — число N (1 ≤ N ≤ 24): сколько часов работала пиццерия.", "Во второй строке — N целых чисел от 0 до 100 через пробел: сколько пицц испекли в каждый час."], outp: "Выведите N чисел через пробел — что показывало табло после 1-го, 2-го, …, N-го часа.", explain: "3; 3 + 7 = 10; 10 + 2 = 12; 12 + 9 = 21; 21 + 4 = 25.", tl: 3, readMap: [["5", "hours = int(input())"], ["3 7 2 9 4", "pizzas = list(map(int, input().split()))"]],
+      sample: { a: [3, 7, 2, 9, 4] }, starter: READ_C + "total = 0    # пиццы с утра\nprefix = []   # префиксные суммы: сколько пицц с утра после каждого часа\n# здесь твой цикл for: прибавь пиццы этого часа к total и положи total в prefix\n\nprint(*prefix)  # * печатает числа списка через пробел, без [ ] и запятых\n", help: "цикл for пишешь сам",
+      tip: "Новое показание = старое показание + пиццы за этот час. print(*prefix) печатает список через пробел.",
+      day: () => ({ a: Array.from({ length: rint(8, 16) }, () => rint(0, 25)) }),
+      input: (d) => `${d.a.length}\n${d.a.join(" ")}\n`, answer: (d) => pre(d.a).slice(1).join(" ") },
+    { title: "Смена Лёни", layer: "Пепперони", coins: 30, noSum: true,
+      story: "Повар Лёня работал с часа <b>L</b> по час <b>R</b> включительно. Хозяйка платит ему по пиццакоину за пиццу. Сколько пицц он испёк за смену? Часы нумеруются с единицы.",
+      inLines: ["В первой строке — число N (1 ≤ N ≤ 24): сколько часов работала пиццерия.", "Во второй строке — N целых чисел от 0 до 100 через пробел: сколько пицц испекли в каждый час.", "В третьей строке — два числа L и R (1 ≤ L ≤ R ≤ N): первый и последний час смены Лёни. Часы нумеруются с единицы."], outp: "Выведите одно число — сколько пицц испекли с часа L по час R включительно.", explain: "Смена — часы 2, 3 и 4: 7 + 2 + 9 = 18.", tl: 3, readMap: [["2 4", "start, end = map(int, input().split())"]], readNote: "Первые две строки ты уже читать умеешь. Новая — третья:",
+      sample: { a: [3, 7, 2, 9, 4], l: 2, r: 4 }, starter: READ + "# прочитай третью строку: L и R — начало и конец смены (start, end)\n# выведи, сколько пицц испекли с часа L по час R\n", help: "дана только лента, остальное — твоё",
+      tip: "Список с нуля, часы с единицы. Срез pizzas[start - 1:end] берёт ровно часы с L по R.",
+      day: () => { const n = rint(10, 20), l = rint(1, n), r = rint(l, n); return { a: Array.from({ length: n }, () => rint(0, 25)), l, r }; },
+      input: (d) => `${d.a.length}\n${d.a.join(" ")}\n${d.l} ${d.r}\n`, answer: (d) => String(d.a.slice(d.l - 1, d.r).reduce((s, x) => s + x, 0)) },
+    { title: "Скутер для доставки", layer: "Грибы и базилик", coins: 40,
+      story: "Каждая пицца — один пиццакоин. Хозяйка копит на скутер ценой <b>X</b>. В конце какого часа денег впервые хватит? Если за день не набралось — выведи <b>-1</b>.",
+      inLines: ["В первой строке — число N (1 ≤ N ≤ 24): сколько часов работала пиццерия.", "Во второй строке — N целых чисел от 0 до 100 через пробел: сколько пицц испекли в каждый час.", "В третьей строке — число X (1 ≤ X ≤ 10⁹): цена скутера в пиццакоинах."], outp: "Выведите номер часа (с единицы), в конце которого денег впервые хватило. Если за весь день не хватило — выведите -1.", explain: "Табло: 3, 10, 12 — после третьего часа набралось 12 пиццакоинов, этого хватает.", tl: 3,
+      sample: { a: [3, 7, 2, 9, 4], x: 12 }, starter: "# вход: N, лента, X — придумай понятные имена: hours, pizzas, price\n# выведи номер часа, когда хватит на скутер, или -1\n", help: "всю программу пишешь сам",
+      tip: "Как только копилка total стала ≥ price — печатай номер часа hour + 1 и break. Перебирай часы так: for hour in range(hours). Ветка else у цикла сработает, только если break не случился.",
+      day: () => { const a = Array.from({ length: rint(10, 18) }, () => rint(0, 25)); const tot = a.reduce((s, x) => s + x, 0); return { a, x: Math.random() < 0.2 ? tot + rint(1, 30) : rint(1, Math.max(1, tot)) }; },
+      input: (d) => `${d.a.length}\n${d.a.join(" ")}\n${d.x}\n`,
+      answer: (d) => { let s = 0; for (let i = 0; i < d.a.length; i++) { s += d.a[i]; if (s >= d.x) return String(i + 1); } return "-1"; } },
+    { title: "Босс: лучшая смена", layer: "В печь!", coins: 100, boss: true,
+      story: "Пиццерия стала сетью и работает уже 60 000 часов. Лучшему повару дают смену в <b>K</b> часов подряд — в самые горячие часы. Сколько пицц он испечёт? Если для каждого начала смены складывать K чисел заново, печь остынет раньше, чем программа досчитает. Тут нужен счётчик с прошлого заказа.",
+      inLines: ["В первой строке — два числа N и K (1 ≤ K ≤ N ≤ 60 000): сколько часов работала сеть и сколько часов длится смена.", "Во второй строке — N целых чисел от 0 до 60 через пробел: сколько пицц испекли в каждый час."], outp: "Выведите одно число — наибольшее количество пицц, которое можно испечь за K часов подряд.", explain: "Смены по 2 часа: 3 + 7 = 10, 7 + 2 = 9, 2 + 9 = 11, 9 + 4 = 13. Лучшая — 13.", tl: 6,
+      sample: { a: [3, 7, 2, 9, 4], k: 2 },
+      starter: "# босс: вся программа твоя. Имена — понятные: hours, shift, pizzas, prefix, best\n", help: "босс: пустой лист",
+      tip: "Если prefix[hour] — пиццы за первые hour часов, то смена с часа start + 1 длиной shift — это prefix[start + shift] − prefix[start]. Одно вычитание вместо K сложений.",
+      day: (big) => big ? { a: Array.from({ length: 60000 }, () => rint(0, 60)), k: rint(20000, 30000) } : (() => { const n = rint(8, 16); return { a: Array.from({ length: n }, () => rint(0, 25)), k: rint(1, n) }; })(),
+      input: (d) => `${d.a.length} ${d.k}\n${d.a.join(" ")}\n`,
+      answer: (d) => { const p = pre(d.a); let b = 0; for (let i = 0; i + d.k <= d.a.length; i++) b = Math.max(b, p[i + d.k] - p[i]); return String(b); } },
+  ];
+  const sampleIn = (o) => o.input(o.sample);
+
+  // ---------- Python в браузере (Skulpt) ----------
+  let pyReady = false;
+  function runPy(code, input, limitMs) {
+    const lines = input.split("\n"); let k = 0, out = "";
+    Sk.configure({ output: (t) => { out += t; if (out.length > 200000) throw new Error("Программа печатает слишком много."); },
+      read: (f) => { if (!Sk.builtinFiles || Sk.builtinFiles.files[f] === undefined) throw "Нет файла " + f; return Sk.builtinFiles.files[f]; },
+      inputfun: () => (k < lines.length ? lines[k++] : ""), inputfunTakesPrompt: true,
+      __future__: Sk.python3, execLimit: limitMs, yieldLimit: 200 });
+    const t0 = performance.now();
+    return Sk.misceval.asyncToPromise(() => Sk.importMainWithBody("<stdin>", false, code, true))
+      .then(() => ({ ok: true, out, ms: performance.now() - t0 }))
+      .catch((e) => ({ ok: false, out, err: explain(e), ms: performance.now() - t0 }));
+  }
+  // Отладчик: Skulpt останавливается перед каждой строкой; запоминаем строку, переменные и вывод к этому моменту.
+  function tracePy(code, input) {
+    const lines = input.split("\n"); let k = 0, out = "";
+    const steps = [], MAX = 3000;
+    Sk.configure({ output: (t) => { out += t; }, read: (f) => { if (!Sk.builtinFiles || Sk.builtinFiles.files[f] === undefined) throw "Нет файла " + f; return Sk.builtinFiles.files[f]; },
+      inputfun: () => (k < lines.length ? lines[k++] : ""), inputfunTakesPrompt: true, __future__: Sk.python3,
+      execLimit: 6000, debugging: true, breakpoints: () => true });
+    const show = (v) => { try { const r = Sk.misceval.objectRepr(v); return r && r.v !== undefined ? r.v : String(r); } catch (e) { return "?"; } };
+    const typeOf = (v) => { try { return Sk.abstr.typeName(v); } catch (e) { return ""; } };
+    const handler = (susp) => {
+      let f = null, c = susp; while (c) { if (c.$gbl) f = c; c = c.child; }
+      if (f && steps.length < MAX) {
+        const vars = [], seen = new Set();
+        for (const scope of [f.$loc, f.$gbl]) {
+          if (!scope) continue;
+          for (const name of Object.keys(scope)) {
+            if (name.startsWith("__") || seen.has(name)) continue;
+            const v = scope[name]; if (v === undefined || typeof v === "function") continue;
+            const t = typeOf(v); if (t === "function" || t === "module" || t === "type") continue;
+            seen.add(name); vars.push([name.replace(/_\$rn\$$/, ""), show(v), t]);
+          }
+        }
+        steps.push({ line: f.$lineno, vars, out });
+      }
+      if (steps.length >= MAX) return Promise.reject(new Error("Слишком много шагов — отладчик показывает первые 3000."));
+      return Promise.resolve(susp.resume());
+    };
+    return Sk.misceval.asyncToPromise(() => Sk.importMainWithBody("<stdin>", false, code, true), { "Sk.debug": handler })
+      .then(() => ({ steps: withLoopHeads(code, steps, out), out, err: "" }))
+      .catch((e) => ({ steps: withLoopHeads(code, steps, out), out, err: e instanceof Error ? e.message : explain(e) }));
+  }
+  // Skulpt останавливается на заголовке цикла только один раз. Настоящий отладчик встаёт на «for …:»
+  // перед каждым новым кругом и перед выходом из цикла — дописываем эти шаги сами.
+  function withLoopHeads(code, steps, outEnd) {
+    const src = code.split("\n"), ind = (t) => t.match(/^\s*/)[0].length, loops = [];
+    src.forEach((t, i) => {
+      if (!/^\s*(for|while)\b.*:\s*(#.*)?$/.test(t)) return;
+      let end = i + 1;
+      for (let j = i + 1; j < src.length; j++) { const u = src[j]; if (!u.trim() || /^\s*#/.test(u)) continue; if (ind(u) <= ind(t)) break; end = j + 1; }
+      if (end > i + 1) loops.push({ head: i + 1, from: i + 2, to: end });
+    });
+    if (!loops.length) return steps;
+    const inBody = (L, line) => line >= L.from && line <= L.to;
+    const res = [];
+    for (let k = 0; k < steps.length; k++) {
+      const prev = res.length ? res[res.length - 1] : null, st = steps[k];
+      if (prev) {
+        const head = (L) => res.push({ line: L.head, vars: prev.vars, out: st.out });
+        // вышли из циклов: перед выходом — ещё раз на заголовок (проверка: элементов больше нет)
+        loops.filter((L) => inBody(L, prev.line) && !inBody(L, st.line) && st.line !== L.head).sort((a, b) => b.head - a.head).forEach(head);
+        // новый круг: прыжок назад внутри тела — сначала заголовок
+        const back = loops.filter((L) => inBody(L, prev.line) && inBody(L, st.line) && st.line <= prev.line).sort((a, b) => b.head - a.head)[0];
+        if (back) head(back);
+      }
+      res.push(st);
+    }
+    const last = res[res.length - 1];
+    loops.filter((L) => inBody(L, last.line)).sort((a, b) => b.head - a.head).forEach((L) => res.push({ line: L.head, vars: last.vars, out: outEnd }));
+    return res;
+  }
+  function markErr(i, msg) { const m = String(msg || "").match(/строка (\d+)/); if (m) editors[i].mark(+m[1], "err-line"); }
+  function explain(e) {
+    const s = e && e.toString ? e.toString() : String(e);
+    const line = (s.match(/on line (\d+)/) || [])[1];
+    const at = line ? ` (строка ${line})` : "";
+    if (/TimeLimitError/.test(s)) return "Слишком долго: программа не успела. Похоже, она много раз складывает одно и то же — нужен счётчик.";
+    if (/SyntaxError|ParseError/.test(s)) return "Python не понимает запись" + at + ". Посмотри на эту строку и ту, что над ней. Python пишет: " + s.replace(/ on line.*/, "");
+    if (/IndentationError/.test(s)) return "Отступы не на месте" + at + ".";
+    if (/NameError/.test(s)) return "Python не знает такого имени" + at + ": " + s.replace(/^NameError:\s*/, "").replace(/ on line.*/, "");
+    if (/IndexError/.test(s)) return "Выход за границу списка" + at + ": такого номера в списке нет.";
+    if (/ValueError/.test(s)) return "Не получилось превратить строку в число" + at + ". Проверь, сколько input() и что в каждой строке.";
+    if (/TypeError/.test(s)) return "Действие не подходит к этим данным" + at + ": " + s.replace(/^TypeError:\s*/, "").replace(/ on line.*/, "");
+    return s.replace(/ on line (\d+)/, " (строка $1)");
+  }
+  const norm = (s) => s.split("\n").map((l) => l.replace(/\s+$/, "")).join("\n").replace(/\n+$/, "");
+
+  // ---------- прогресс и код сохраняются в браузере, если можно ----------
+  const KEY = "pizzacoin-v6";
+  let saved = { done: 0, code: {}, stars: {} };
+  try { saved = Object.assign(saved, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) { /* без хранилища */ }
+  let done = Math.min(ORDERS.length, saved.done | 0);
+  function save() { try { localStorage.setItem(KEY, JSON.stringify({ done, code: saved.code, stars: saved.stars })); } catch (e) { /* ничего */ } }
+
+  // ---------- заказы ----------
+  // ---------- редактор: подсветка, подсказки при наборе, Tab как в PyCharm ----------
+  const PY_WORDS = [
+    ["print", "print()", "напечатать"], ["input", "input()", "прочитать строку"], ["int", "int()", "в целое число"], ["str", "str()", "в строку"],
+    ["len", "len()", "длина"], ["range", "range()", "числа подряд"], ["list", "list()", "сделать список"], ["map", "map()", "к каждому: map(int, …)"],
+    ["max", "max()", "наибольшее"], ["min", "min()", "наименьшее"], ["sum", "sum()", "сумма списка"], ["abs", "abs()", "модуль"], ["sorted", "sorted()", "отсортировать"],
+    ["enumerate", "enumerate()", "номер и элемент"], ["split", "split()", "разрезать по пробелам"], ["append", "append()", "добавить в конец"],
+    ["if", "if ", "если"], ["elif", "elif ", "иначе если"], ["else", "else:", "иначе"], ["for", "for ", "цикл по элементам"], ["while", "while ", "пока"],
+    ["break", "break", "выйти из цикла"], ["continue", "continue", "к следующему шагу"], ["in", "in ", "в / по"], ["and", "and ", "и"], ["or", "or ", "или"], ["not", "not ", "не"],
+    ["True", "True", "истина"], ["False", "False", "ложь"], ["def", "def ", "функция"], ["return", "return ", "вернуть"],
+  ];
+  const PY_SNIPPETS = [
+    ["list(map(int, input().split()))", "list(map(int, input().split()))", "список чисел из строки"],
+    ["map(int, input().split())", "map(int, input().split())", "несколько чисел из строки"],
+    ["int(input())", "int(input())", "одно число"],
+  ];
+  function pyHint(cm) {
+    const cur = cm.getCursor(), line = cm.getLine(cur.line);
+    let start = cur.ch; while (start > 0 && /[\w.]/.test(line[start - 1])) start--;
+    let word = line.slice(start, cur.ch); const dot = word.lastIndexOf(".");
+    if (dot >= 0) { start += dot + 1; word = word.slice(dot + 1); }
+    if (!word) return null;
+    const w = word.toLowerCase(), list = [];
+    const r = (label, note) => (el) => { el.innerHTML = `<span>${esc(label)}</span><span class="hn">${esc(note)}</span>`; };
+    // свои переменные — первыми: их чаще всего и дописывают
+    const own = new Set((cm.getValue().replace(/#.*$/gm, "").match(/[A-Za-z_][A-Za-z_0-9]*/g) || []).filter((x) => x.length > 1 && x !== word));
+    own.forEach((x) => { if (x.toLowerCase().startsWith(w) && !PY_WORDS.some(([l]) => l === x)) list.push({ text: x, render: r(x, "твоя переменная") }); });
+    PY_SNIPPETS.forEach(([label, text, note]) => { if (label.startsWith(w)) list.push({ text, render: r(label, note) }); });
+    PY_WORDS.forEach(([label, text, note]) => { if (label.toLowerCase().startsWith(w) && label !== word) list.push({ text, render: r(label, note) }); });
+    return list.length ? { list: list.slice(0, 10), from: CodeMirror.Pos(cur.line, start), to: cur } : null;
+  }
+  const editors = [];
+  function makeEditor(ta, i, el) {
+    if (!window.CodeMirror) { // без библиотеки — простое поле
+      ta.addEventListener("input", () => { saved.code[i] = ta.value; save(); });
+      return { getValue: () => ta.value, setValue: (v) => (ta.value = v), mark() {}, clear() {} };
+    }
+    const cm = CodeMirror.fromTextArea(ta, {
+      mode: "python", lineNumbers: true, indentUnit: 4, tabSize: 4, indentWithTabs: false, matchBrackets: true, autoCloseBrackets: true, viewportMargin: Infinity,
+      extraKeys: {
+        Tab: (c) => {
+          if (c.somethingSelected()) return c.indentSelection("add");
+          const cur = c.getCursor(), before = c.getLine(cur.line).slice(0, cur.ch);
+          if (/[A-Za-z_][\w.]*$/.test(before) && pyHint(c)) return c.showHint({ hint: pyHint, completeSingle: true });
+          c.replaceSelection("    ", "end");
+        },
+        "Shift-Tab": (c) => c.indentSelection("subtract"),
+        "Ctrl-Space": (c) => c.showHint({ hint: pyHint, completeSingle: false }),
+        "Ctrl-Enter": () => submit(i, el), "Cmd-Enter": () => submit(i, el),
+      },
+    });
+    cm.on("inputRead", (c, ch) => { if (ch.origin === "+input" && /^[A-Za-z_.]$/.test(ch.text[0])) c.showHint({ hint: pyHint, completeSingle: false, closeCharacters: /[\s()\[\]{};:>,=]/ }); });
+    let marked = null;
+    cm.on("change", () => { saved.code[i] = cm.getValue(); save(); if (marked !== null) { cm.removeLineClass(marked, "background"); marked = null; } });
+    return {
+      getValue: () => cm.getValue(), setValue: (v) => cm.setValue(v),
+      mark(line, cls) { if (marked !== null) cm.removeLineClass(marked, "background"); marked = null; if (line) { marked = cm.addLineClass(line - 1, "background", cls); cm.scrollIntoView({ line: line - 1, ch: 0 }, 40); } },
+      clear() { if (marked !== null) cm.removeLineClass(marked, "background"); marked = null; },
+    };
+  }
+
+  // ---------- 🐞 по шагам на примере ----------
+  async function debugSample(i, el) {
+    if (!pyReady || blankGuard(el)) return;
+    const o = ORDERS[i], run = el.querySelector(".run"), ed = editors[i];
+    busy(el, true); run.innerHTML = '<p class="run-empty">Записываю шаги программы…</p>';
+    const tr = await tracePy(ed.getValue(), sampleIn(o));
+    busy(el, false);
+    if (!tr.steps.length) { run.innerHTML = `<div class="test"><div class="verdict bad">${esc(tr.err || "Программа не сделала ни одного шага.")}</div></div>`; return; }
+    let k = 0, prev = null;
+    run.innerHTML = `<div class="test"><div class="dbg-bar"><button class="btn btn-ghost" type="button" data-p>◀</button><button class="btn" type="button" data-n>Шаг ▶</button><button class="btn btn-ghost" type="button" data-e>⏭ В конец</button><span class="dbg-pos"></span></div>
+      <table class="vars" aria-label="Переменные"></table><div class="meter">Вывод:</div><div class="out" data-o></div><div class="verdict"></div></div>`;
+    const t = run.querySelector(".test");
+    function show() {
+      const st = tr.steps[k], last = k === tr.steps.length - 1;
+      ed.mark(st.line, "dbg-line");
+      t.querySelector(".dbg-pos").textContent = `строка ${st.line} · шаг ${k + 1} из ${tr.steps.length}`;
+      const before = new Map((prev || []).map(([n, v]) => [n, v]));
+      t.querySelector(".vars").innerHTML = st.vars.length ? st.vars.map(([n, v, ty]) => `<tr class="${before.get(n) !== v ? "chg" : ""}"><td>${esc(n)}</td><td>${esc(v.length > 120 ? v.slice(0, 120) + "…" : v)}</td><td class="ty">${esc(ty)}</td></tr>`).join("") : '<tr><td class="ty">переменных пока нет</td></tr>';
+      t.querySelector("[data-o]").textContent = (last ? tr.out : st.out) || " ";
+      const v = t.querySelector(".verdict");
+      if (last) { v.className = "verdict " + (tr.err ? "bad" : "ok"); v.textContent = tr.err || "Программа закончилась. Сравни вывод с примером."; } else { v.textContent = ""; }
+      t.querySelector("[data-p]").disabled = k === 0;
+      t.querySelector("[data-n]").disabled = last;
+    }
+    const step = (d) => { const nk = Math.max(0, Math.min(tr.steps.length - 1, k + d)); if (nk !== k) { prev = tr.steps[k].vars; k = nk; show(); } };
+    t.querySelector("[data-p]").onclick = () => step(-1);
+    t.querySelector("[data-n]").onclick = () => step(1);
+    t.querySelector("[data-e]").onclick = () => { prev = tr.steps[k].vars; k = tr.steps.length - 1; show(); };
+    show();
+  }
+
+  const box = $("tickets");
+  ORDERS.forEach((o, i) => {
+    const el = document.createElement("article");
+    el.className = "ticket"; el.id = "order-" + (i + 1);
+    const sIn = sampleIn(o), sOut = o.answer(o.sample);
+    el.innerHTML =
+      `<div class="t-head"><span class="t-no">Заказ ${i + 1}${o.boss ? " · босс" : ""}</span><h2 class="t-title">${o.title}</h2><span class="t-state"></span></div>
+      <div class="t-body"><p class="t-story">${o.story}</p>
+      <div class="io">
+        <section><h3>Входные данные</h3>${o.inLines.map((t) => `<p>${esc(t)}</p>`).join("")}</section>
+        <section><h3>Выходные данные</h3><p>${esc(o.outp)}</p></section>
+        <section><h3>Пример</h3><div class="ex-wrap"><table class="ex"><tr><th>Ввод</th><th>Вывод</th></tr><tr><td><pre>${esc(sIn.trimEnd())}</pre></td><td><pre>${esc(sOut)}</pre></td></tr></table></div>
+          <p class="expl"><b>Пояснение.</b> ${esc(o.explain)}</p><p class="tl">Ограничение времени: ${o.tl} с.</p></section>
+        ${o.readMap ? `<section class="readmap"><h3>Как прочитать вход <button class="ri-i" type="button" data-ri title="Выполнение по шагам: input → split → map → list">🐞 Debug</button></h3>${o.readNote ? `<p>${esc(o.readNote)}</p>` : ""}${o.readMap.map(([line, py]) => `<div class="rm-row"><code class="rm-in">${esc(line)}</code><span aria-hidden="true">→</span><code class="rm-py">${esc(py)}</code></div>`).join("")}</section>` : ""}
+      </div>
+      <div class="work"><div>
+        <label for="code-${i + 1}" class="hint" style="display:block;margin:0 0 6px">Программа для заказа ${i + 1} · ${o.help}</label>
+        <textarea class="editor" id="code-${i + 1}" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <div class="row"><button class="btn btn-ghost" type="button" data-try>▶ На примере</button><button class="btn btn-ghost" type="button" data-dbg title="Выполнение по шагам на примере: смотри, как меняются переменные">🐞 Debug</button><button class="btn btn-hot" type="button" data-send>Сдать заказ</button></div>
+        <div class="hint">Tab — дописать слово (как в PyCharm) или отступ · Ctrl+Space — все подсказки · Ctrl+Enter — сдать заказ.</div>
+        <details class="tip"><summary>Подсказка</summary>${esc(o.tip)}</details>
+      </div><div class="run" aria-live="polite"><p class="run-empty">Здесь будет видно, как пиццерия проверяет твою программу: час за часом.</p></div></div>
+      <div class="solved-note">✓ Заказ выполнен: ${o.layer.toLowerCase()} +${o.coins} пиццакоинов</div></div>`;
+    const ed = el.querySelector(".editor");
+    ed.value = saved.code[i] != null ? saved.code[i] : o.starter;
+    const riBtn = el.querySelector("[data-ri]");
+    if (riBtn) riBtn.addEventListener("click", () => ReadInput.open({ line: o.sample.a.join(" "), nLine: String(o.sample.a.length), aName: "pizzas", nName: "hours" }));
+    el.querySelector("[data-try]").addEventListener("click", () => trySample(i, el));
+    el.querySelector("[data-send]").addEventListener("click", () => submit(i, el));
+    el.querySelector("[data-dbg]").addEventListener("click", () => debugSample(i, el));
+    box.appendChild(el);
+    editors[i] = makeEditor(ed, i, el);
+  });
+
+  function busy(el, on) { el.querySelectorAll("button").forEach((b) => (b.disabled = on)); }
+
+  // «...» в заготовке — пропуск. Не запускаем, а показываем, где он.
+  function blankGuard(el) {
+    const code = editors[+el.id.split("-")[1] - 1].getValue(), lines = code.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const clean = lines[i].replace(/(["'])(?:\\.|(?!\1).)*\1/g, '""').replace(/#.*$/, "");
+      if (clean.includes("...")) {
+        editors[+el.id.split("-")[1] - 1].mark(i + 1, "err-line");
+        el.querySelector(".run").innerHTML = `<div class="test"><div class="test-h"><span>Строка ${i + 1}</span></div><div class="out">${esc(lines[i].trim())}</div>
+          <div class="verdict bad">Здесь осталось ... — это пропуск, его нужно заполнить. Замени ... на свой код и запусти снова.</div></div>`;
+        return true;
+      }
+    }
+    return false;
+  }
+  async function trySample(i, el) {
+    if (!pyReady || blankGuard(el)) return;
+    const o = ORDERS[i], run = el.querySelector(".run"); busy(el, true);
+    editors[i].clear();
+    const r = await runPy(editors[i].getValue(), sampleIn(o), 3000);
+    const want = o.answer(o.sample);
+    if (!r.ok) markErr(i, r.err);
+    run.innerHTML = `<div class="test"><div class="test-h"><span>Пример из заказа</span><span>${Math.round(r.ms)} мс</span></div>
+      <div class="out">${esc(r.out || "(ничего не напечатано)")}</div>
+      <div class="verdict ${r.ok && norm(r.out) === want ? "ok" : "bad"}">${r.ok ? (norm(r.out) === want ? "Совпало с примером ✓ Теперь сдавай заказ." : "Должно быть: " + esc(want)) : esc(r.err)}</div></div>`;
+    busy(el, false);
+  }
+
+  // Проверка заказа: несколько новых дней, каждый «проживаем» час за часом на плитках.
+  async function submit(i, el) {
+    if (!pyReady || blankGuard(el)) return;
+    editors[i].clear();
+    const o = ORDERS[i], run = el.querySelector(".run"), code = editors[i].getValue();
+    busy(el, true); run.innerHTML = "";
+    const days = [o.sample, o.day(false), o.day(false), o.day(false)];
+    if (o.boss) days.push(o.day(true));
+    let allOk = true;
+    for (let t = 0; t < days.length; t++) {
+      const d = days[t], big = d.a.length > 40;
+      const card = document.createElement("div"); card.className = "test";
+      card.innerHTML = `<div class="test-h"><span>${t === 0 ? "День из примера" : "День " + (t + 1)}${big ? " · " + d.a.length.toLocaleString("ru-RU") + " часов" : ""}</span><span class="ms"></span></div>
+        ${big ? "" : `<div class="tiles">${d.a.map((x, h) => `<span class="tile${d.l && h + 1 >= d.l && h + 1 <= d.r ? " shift" : ""}" title="час ${h + 1}">${x}</span>`).join("")}</div>`}
+        <div class="meter">${big ? "Печь гудит, программа считает…" : "Пицц с утра: <b>0</b>"}</div><div class="verdict"></div>`;
+      run.appendChild(card);
+      const res = runPy(code, o.input(d), o.boss ? 6000 : 3000);
+      if (!big) { // день идёт час за часом — табло растёт, как префиксная сумма
+        const tiles = card.querySelectorAll(".tile"), meter = card.querySelector(".meter b");
+        let s = 0;
+        for (let h = 0; h < tiles.length; h++) { s += d.a[h]; tiles[h].classList.add("lit"); meter.textContent = s; if (!reduce) await sleep(t === 0 ? 70 : 40); }
+        card.querySelector(".meter").innerHTML = `Пицц за день: <b>${s}</b>`;
+      }
+      const r = await res, want = o.answer(d), got = norm(r.out);
+      card.querySelector(".ms").textContent = Math.round(r.ms) + " мс";
+      const v = card.querySelector(".verdict");
+      if (!r.ok) { v.className = "verdict bad"; v.textContent = r.err; allOk = false; markErr(i, r.err); }
+      else if (got === want) { v.className = "verdict ok"; v.textContent = `Программа ответила ${short(got)} ✓`; if (big) card.querySelector(".meter").textContent = "Досчитала вовремя."; }
+      else { v.className = "verdict bad"; v.innerHTML = `Программа ответила ${esc(short(got) || "пустоту")}, а нужно ${esc(short(want))}`; allOk = false;
+        if (!big) { const inEl = document.createElement("div"); inEl.className = "out"; inEl.textContent = "Вход этого дня:\n" + o.input(d); card.appendChild(inEl); } }
+      if (!allOk) break;
+    }
+    const sum = document.createElement("div");
+    sum.className = "summary " + (allOk ? "ok" : "bad");
+    sum.textContent = allOk ? `Заказ выполнен! Пройдено дней: ${days.length} из ${days.length}.` : "Заказ пока не принят. Исправь программу и сдай ещё раз.";
+    run.appendChild(sum);
+    busy(el, false);
+    if (allOk && o.noSum) {
+      // бонус: та же задача без готовой sum() — своим циклом с копилкой
+      const star = document.createElement("div");
+      if (usesSum(code)) {
+        star.className = "summary star";
+        star.innerHTML = saved.stars[i] ? "⭐ Бонус уже есть. Обе версии работают — так и надо уметь." : "⭐ Бонус: а теперь реши <b>без sum()</b> — сам, циклом с копилкой. Сдай заказ ещё раз и получи +5 пиццакоинов.";
+      } else if (!saved.stars[i]) {
+        saved.stars[i] = 1; save(); countTo(walletTotal());
+        star.className = "summary star"; star.textContent = "⭐ Без sum() — сам посчитал! +5 пиццакоинов.";
+      }
+      if (star.className) run.appendChild(star);
+      holdScroll = usesSum(code) && !saved.stars[i];
+      el.classList.toggle("starred", !!saved.stars[i]);
+    }
+    if (allOk) {
+      if (i + 1 > done) { done = i + 1; save(); render(true); } else shake = 0;
+    } else shake = 1;
+  }
+  // sum( в коде, не считая комментариев и строк
+  function usesSum(code) {
+    const clean = code.split("\n").map((l) => l.replace(/(["'])(?:\\.|(?!\1).)*\1/g, '""').replace(/#.*$/, "")).join("\n");
+    return /\bsum\s*\(/.test(clean);
+  }
+  const walletTotal = () => ORDERS.slice(0, done).reduce((s, o) => s + o.coins, 0) + 5 * Object.keys(saved.stars || {}).length;
+  const short = (s) => (s.length > 60 ? s.slice(0, 60) + "…" : s);
+
+  const hot = new Set([10, 11, 18, 19, 20, 26, 27, 28]);
+  for (let k = 0; k < 40; k++) { const s = document.createElement("span"); s.textContent = (k * 7 + 3) % 10; if (hot.has(k)) s.className = "hot"; $("city").appendChild(s); }
+
+  function render(animate) {
+    document.querySelectorAll(".ticket").forEach((el, i) => {
+      const st = el.querySelector(".t-state");
+      el.classList.toggle("done", i < done); el.classList.toggle("locked", i > done);
+      st.className = "t-state " + (i < done ? "st-done" : i === done ? "st-open" : "st-lock");
+      st.textContent = i < done ? "готов" : i === done ? "в работе" : "закрыт";
+    });
+    const coins = walletTotal();
+    animate ? countTo(coins) : ($("wallet").textContent = walletShown = coins);
+    $("layer-cap").textContent = done === 0 ? "Тесто раскатано" : done < ORDERS.length ? "Начинка: " + ORDERS.slice(0, done).map((o) => o.layer.toLowerCase()).join(", ") : "Пицца готова!";
+    $("step-cap").textContent = done < ORDERS.length ? `Заказ ${done + 1} из ${ORDERS.length}` : "Все заказы выполнены";
+    $("finale").classList.toggle("locked", done < ORDERS.length);
+    $("finale-text").textContent = done < ORDERS.length ? "Откроется, когда пицца выйдет из печи."
+      : "«Пиццакоин» растёт: теперь это сеть пиццерий на карте города. Красные кварталы — самые голодные. Сколько пицц продано в любом прямоугольнике карты — и как ответить на миллион таких вопросов сразу? Табло на печи станет двумерным. Приходи на занятие.";
+    if (animate) { target = done; drop = 0; if (done === ORDERS.length) bake = 0.0001; }
+    if (animate && done < ORDERS.length && !holdScroll) setTimeout(() => $("order-" + (done + 1)).scrollIntoView({ behavior: "smooth", block: "start" }), 1400);
+  }
+  let walletShown = 0, holdScroll = false;
+  function countTo(v) { const from = walletShown, t0 = performance.now();
+    const step = (t) => { const k = Math.min(1, (t - t0) / 900); walletShown = Math.round(from + (v - from) * k); $("wallet").textContent = walletShown; if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step); }
+  $("reset").addEventListener("click", () => {
+    done = 0; saved.code = {}; saved.stars = {}; save(); shown = 0; target = 0; bake = 0;
+    editors.forEach((ed, i) => ed.setValue(ORDERS[i].starter));
+    document.querySelectorAll(".run").forEach((r) => (r.innerHTML = '<p class="run-empty">Здесь будет видно, как пиццерия проверяет твою программу: час за часом.</p>'));
+    render(false); scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  // ---------- сцена: печь и пицца на лопате ----------
+  const cv = $("scene"), g = cv.getContext("2d"), W = cv.width, H = cv.height;
+  let shown = done, target = done, drop = 1, bake = done === ORDERS.length ? 1 : 0, shake = 0, tick = 0;
+  function rng(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  const rnd = rng(7);
+  const pep = Array.from({ length: 11 }, () => { const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * 78; return [Math.cos(a) * r, Math.sin(a) * r * 0.55]; });
+  const mush = Array.from({ length: 8 }, () => { const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * 80; return [Math.cos(a) * r, Math.sin(a) * r * 0.55, rnd() * 6]; });
+  const sparks = [];
+  function oven(x, y) {
+    g.fillStyle = "#9B4A33"; g.beginPath(); g.moveTo(x - 170, y + 120); g.lineTo(x - 170, y - 10); g.quadraticCurveTo(x, y - 190, x + 170, y - 10); g.lineTo(x + 170, y + 120); g.fill();
+    g.strokeStyle = "#7E3A27"; g.lineWidth = 3; for (let r = 0; r < 6; r++) { g.beginPath(); g.moveTo(x - 170, y + 120 - r * 22); g.lineTo(x + 170, y + 120 - r * 22); g.stroke(); }
+    const glow = 0.75 + 0.25 * Math.sin(tick / 9) + (bake > 0 && bake < 1 ? 0.4 : 0);
+    const gr = g.createRadialGradient(x, y + 70, 10, x, y + 70, 120);
+    gr.addColorStop(0, `rgba(255,214,90,${Math.min(1, glow)})`); gr.addColorStop(0.5, "rgba(232,96,40,.9)"); gr.addColorStop(1, "#2A1A12");
+    g.fillStyle = gr; g.beginPath(); g.moveTo(x - 100, y + 120); g.lineTo(x - 100, y + 60); g.quadraticCurveTo(x, y - 40, x + 100, y + 60); g.lineTo(x + 100, y + 120); g.fill();
+    for (let i = 0; i < 5; i++) { const fx = x - 60 + i * 30, fh = 30 + 14 * Math.sin(tick / 5 + i * 1.7); g.fillStyle = i % 2 ? "#FFB02E" : "#FF7A1F"; g.beginPath(); g.moveTo(fx - 12, y + 120); g.quadraticCurveTo(fx, y + 120 - fh * 2, fx + 12, y + 120); g.fill(); }
+  }
+  function clip(layer) { return shown === layer ? Math.min(1, 0.4 + drop * 0.6) : 1; }
+  function fall(layer, k) { if (shown !== layer) return 0; const t = Math.max(0, Math.min(1, drop * 1.6 - k * 0.06)); return (1 - t) * (1 - t) * 160; }
+  function pizza(cx, cy, layers, elem) {
+    g.fillStyle = "#B98A4E"; g.fillRect(cx - 230, cy - 6, 140, 12);
+    g.beginPath(); g.ellipse(cx, cy + 10, 120, 62, 0, 0, Math.PI * 2); g.fillStyle = "#C99A5E"; g.fill();
+    g.beginPath(); g.ellipse(cx, cy, 108, 56, 0, 0, Math.PI * 2); g.fillStyle = elem ? "#D99A4E" : "#F1DDB0"; g.fill(); g.lineWidth = 6; g.strokeStyle = elem ? "#B8743A" : "#E3C891"; g.stroke();
+    if (layers >= 1) { g.beginPath(); g.ellipse(cx, cy, 94 * clip(1), 48 * clip(1), 0, 0, Math.PI * 2); g.fillStyle = "#C8371F"; g.fill(); }
+    if (layers >= 2) { g.fillStyle = elem ? "#F2B640" : "#F7D774"; g.beginPath(); for (let k = 0; k <= 24; k++) { const a = k / 24 * Math.PI * 2, r = (86 + 6 * Math.sin(k * 3.1)) * clip(2); g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.52); } g.fill(); }
+    if (layers >= 3) pep.forEach(([px, py], k) => { const d = fall(3, k); g.beginPath(); g.ellipse(cx + px, cy + py - d, 12, 7, 0, 0, Math.PI * 2); g.fillStyle = "#A92A1B"; g.fill(); g.fillStyle = "#D0583F"; g.beginPath(); g.ellipse(cx + px - 3, cy + py - d - 1, 3, 2, 0, 0, Math.PI * 2); g.fill(); });
+    if (layers >= 4) mush.forEach(([px, py, rot], k) => { const d = fall(4, k); g.save(); g.translate(cx + px, cy + py - d); g.rotate(rot);
+      if (k % 2) { g.fillStyle = "#3F8F3A"; g.beginPath(); g.ellipse(0, 0, 9, 4, 0, 0, Math.PI * 2); g.fill(); } else { g.fillStyle = "#EDE3D1"; g.beginPath(); g.arc(0, 0, 7, Math.PI, 0); g.fill(); g.fillRect(-2.5, 0, 5, 6); }
+      g.restore(); });
+    if (elem) { g.strokeStyle = "rgba(90,50,20,.45)"; g.lineWidth = 2; for (let k = 0; k < 4; k++) { const a = k * Math.PI / 4; g.beginPath(); g.moveTo(cx - Math.cos(a) * 100, cy - Math.sin(a) * 52); g.lineTo(cx + Math.cos(a) * 100, cy + Math.sin(a) * 52); g.stroke(); } }
+  }
+  function frame() {
+    tick++;
+    if (shown < target && drop >= 1) { shown++; drop = 0; for (let k = 0; k < 18; k++) sparks.push({ x: W * 0.32 + (rnd() - .5) * 160, y: H * 0.62, vx: (rnd() - .5) * 6, vy: -3 - rnd() * 5, life: 1 }); }
+    if (drop < 1) drop = Math.min(1, drop + 0.025);
+    if (shown > target) shown = target;
+    g.fillStyle = "#E9D8B4"; g.fillRect(0, 0, W, H); g.fillStyle = "#DCC79E"; for (let x = 0; x < W; x += 60) g.fillRect(x, 0, 2, H);
+    oven(W * 0.74, H * 0.42);
+    let px = W * 0.32, py = H * 0.62, isBaked = false;
+    if (bake > 0 && bake < 1 && shown >= 4) { bake = Math.min(1, bake + 0.006); const into = bake < 0.4 ? bake / 0.4 : bake < 0.7 ? 1 : 1 - (bake - 0.7) / 0.3;
+      px += W * 0.42 * into; py += 18 * into; isBaked = bake > 0.55; if (bake > 0.4 && bake < 0.7) g.globalAlpha = 0.25; }
+    else if (bake >= 1) isBaked = true;
+    const sx = shake > 0 ? Math.sin(tick * 1.7) * 8 * shake : 0; if (shake > 0) shake = Math.max(0, shake - 0.04);
+    pizza(px + sx, py, Math.min(shown, 4), isBaked); g.globalAlpha = 1;
+    for (let k = sparks.length - 1; k >= 0; k--) { const s = sparks[k]; s.x += s.vx; s.y += s.vy; s.vy += 0.25; s.life -= 0.02; if (s.life <= 0) { sparks.splice(k, 1); continue; }
+      g.fillStyle = `rgba(244,197,66,${s.life})`; g.beginPath(); g.arc(s.x, s.y, 7, 0, Math.PI * 2); g.fill(); g.strokeStyle = `rgba(201,154,30,${s.life})`; g.lineWidth = 2; g.stroke(); }
+    if (isBaked && bake >= 1) { g.font = "28px 'Rubik Mono One', Impact, sans-serif"; g.fillStyle = "#23201C"; g.textAlign = "center"; g.fillText("ГОТОВО!", W * 0.32, H * 0.22); }
+    requestAnimationFrame(frame);
+  }
+
+  render(false);
+  requestAnimationFrame(frame);
+  // прогрев Python: первый запуск Skulpt медленнее остальных
+  (async () => {
+    if (!window.Sk) { $("py-status").textContent = "Python не загрузился. Проверь интернет и обнови страницу."; return; }
+    await runPy("print(1)", "", 2000);
+    pyReady = true; $("py-status").textContent = "Python готов. Пиши программу прямо в заказе.";
+  })();
+})();
+</script>
