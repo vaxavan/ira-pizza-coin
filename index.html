@@ -525,6 +525,23 @@ li.CodeMirror-hint-active { background: var(--ink); color: var(--paper); } li.Co
 .vars td:first-child { font-weight: 700; white-space: nowrap; }
 .vars tr.chg td { background: #FFF3C4; }
 .vars td.ty { color: var(--ink-2); white-space: nowrap; }
+
+/* серии: вкладки над сценой */
+.series { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; }
+.series button { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 999px; padding: 8px 14px; cursor: pointer;
+  background: rgba(255,253,246,.12); color: #E8F0EC; font: 500 15px var(--body); }
+.series button .sn { font-family: var(--mono); font-size: 12px; opacity: .85; }
+.series button[aria-selected="true"] { background: var(--cheese); color: var(--ink); font-weight: 700; }
+.series button:disabled { opacity: .5; cursor: not-allowed; }
+.series button:focus-visible { outline: 3px solid var(--cheese); outline-offset: 2px; }
+.series-intro { color: #D9E7E1; max-width: 64ch; margin: 12px 0 0; }
+.series-intro b { color: var(--cheese); font-weight: 500; }
+.series + .series-intro + .stage { margin-top: 16px; }
+.tiles.grid { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 40px)); }
+.tiles.grid .tile { min-width: 0; }
+.verdict { white-space: pre-line; }
+.finale .btn { margin-top: 16px; }
+.city.tape span { font-size: 12px; font-weight: 700; }
 </style>
 
 <div class="wrap">
@@ -532,10 +549,13 @@ li.CodeMirror-hint-active { background: var(--ink); color: var(--paper); } li.Co
     <h1>Ира<br>Пицца Коин</h1>
     <div class="wallet" aria-live="polite"><span class="coin">П</span><span id="wallet">0</span></div>
   </header>
-  <p class="lede">Пиццерии нужна автоматика. Каждый заказ — маленькая программа на Python. Напиши её, нажми «Сдать заказ», и пиццерия проверит программу на нескольких новых днях работы. Все дни прошли — на пиццу падает новый слой. Пять заказов, и пицца уходит в печь.</p>
+  <p class="lede">Пиццерии нужна автоматика. Каждый заказ — маленькая программа на Python. Напиши её, нажми «Сдать заказ», и пиццерия проверит программу на нескольких новых днях работы. Все дни прошли — заказ выполнен, и на картинке появляется новый слой. В каждой серии пять заказов, последний — босс.</p>
   <p class="rule"><b>Правило кухни:</b> переменные называем так, чтобы было понятно, что внутри: <code>hours</code>, <code>pizzas</code>, <code>total</code>, <code>prefix</code> — а не <code>n</code>, <code>a</code>, <code>s</code>, <code>p</code>. По-английски, маленькими буквами, слова через <code>_</code>: <code>last_hour</code>.</p>
   <p class="rule"><b>Честная кухня:</b> списывать нельзя. Пиццерия замечает, если уйти на другую вкладку, а чужой код в заказ не вставится — пиши сама.</p>
   <p class="py-status" id="py-status">Python загружается…</p>
+
+  <nav class="series" id="series" role="tablist" aria-label="Серии"></nav>
+  <p class="series-intro" id="series-intro"></p>
 
   <div class="stage">
     <canvas id="scene" width="960" height="380" aria-label="Пицца на лопате у печи"></canvas>
@@ -545,9 +565,10 @@ li.CodeMirror-hint-active { background: var(--ink); color: var(--paper); } li.Co
   <section class="rail" aria-label="Заказы"><div class="tickets" id="tickets"></div></section>
 
   <section class="finale locked" id="finale">
-    <h2>В следующей серии</h2>
+    <h2 id="finale-h">В следующей серии</h2>
     <p id="finale-text">Откроется, когда пицца выйдет из печи.</p>
     <div class="city" id="city" aria-hidden="true"></div>
+    <button class="btn btn-hot" type="button" id="next-series" hidden></button>
   </section>
   <div class="reset"><button id="reset" type="button">Начать заново на этом устройстве</button></div>
 </div>
@@ -755,7 +776,7 @@ window.ReadInput = (function () {
   const READ_C = "hours = int(input())                      # 1-я строка: сколько часов → целое число\npizzas = list(map(int, input().split()))  # 2-я строка: лента «3 7 2 9 4» → список [3, 7, 2, 9, 4]\n";
 
   // Каждый заказ: как сделать день работы (вход), правильный ответ, и как показать день на плитках.
-  const ORDERS = [
+  const S1 = [
     { title: "Открытие", layer: "Соус", coins: 10, noSum: true,
       story: "Первый день! Повар записывает на ленту, сколько пицц испёк за каждый час. Хозяйке нужна программа, которая в конце дня скажет, сколько пицц испечено <b>всего</b>.",
       inLines: ["В первой строке — число N (1 ≤ N ≤ 24): сколько часов работала пиццерия.", "Во второй строке — N целых чисел от 0 до 100 через пробел: сколько пицц испекли в каждый час."], outp: "Выведите одно число — сколько пицц испекли за весь день.", explain: "3 + 7 + 2 + 9 + 4 = 25.", tl: 3, readMap: [["5", "hours = int(input())"], ["3 7 2 9 4", "pizzas = list(map(int, input().split()))"]],
@@ -795,13 +816,156 @@ window.ReadInput = (function () {
       input: (d) => `${d.a.length} ${d.k}\n${d.a.join(" ")}\n`,
       answer: (d) => { const p = pre(d.a); let b = 0; for (let i = 0; i + d.k <= d.a.length; i++) b = Math.max(b, p[i + d.k] - p[i]); return String(b); } },
   ];
+
+  // ---------- Серия 2. Город: табло на карте (двумерные префиксные суммы) ----------
+  const grid = (R, C, hi) => Array.from({ length: R }, () => Array.from({ length: C }, () => rint(0, hi)));
+  const gridIn = (g) => `${g.length} ${g[0].length}\n${g.map((r) => r.join(" ")).join("\n")}\n`;
+  const rect = (g, [r1, c1, r2, c2]) => { let s = 0; for (let r = r1 - 1; r < r2; r++) for (let c = c1 - 1; c < c2; c++) s += g[r][c]; return s; };
+  const pre2 = (g) => { const R = g.length, C = g[0].length, P = Array.from({ length: R + 1 }, () => new Array(C + 1).fill(0));
+    for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) P[r + 1][c + 1] = P[r][c + 1] + P[r + 1][c] - P[r][c] + g[r][c]; return P; };
+  const randRect = (R, C) => { const r1 = rint(1, R), r2 = rint(r1, R), c1 = rint(1, C), c2 = rint(c1, C); return [r1, c1, r2, c2]; };
+  const gridViz = (d, hl) => { const C = d.g[0].length; return { kind: "grid", cols: C, values: d.g.flat(), hl,
+    title: (k) => `улица ${Math.floor(k / C) + 1}, квартал ${k % C + 1}`, meter: (s) => `Пицц на карте: <b>${s}</b>` }; };
+  const READ_G = "rows, cols = map(int, input().split())\ngrid = []\nfor r in range(rows):\n    grid.append(list(map(int, input().split())))\n";
+  const READ_GC = "rows, cols = map(int, input().split())        # 1-я строка: сколько улиц и сколько кварталов на улице\ngrid = []                                     # карта: список улиц, каждая улица — список чисел\nfor r in range(rows):                         # дальше rows строк — по улице в строке\n    grid.append(list(map(int, input().split())))\n";
+  const G_SAMPLE = [[3, 1, 4], [1, 5, 9], [2, 6, 5]];
+  const G_IN = ["В первой строке — два числа R и C (1 ≤ R, C ≤ 10): сколько улиц на карте и сколько кварталов на каждой улице.", "Дальше R строк, в каждой C целых чисел от 0 до 50 через пробел: сколько пицц заказал каждый квартал этой улицы."];
+  const S2 = [
+    { title: "Карта города", layer: "Цифры на карте", coins: 20,
+      story: "Курьеры принесли карту города. Город — это таблица: улицы идут сверху вниз, кварталы на улице — слева направо. В каждой клетке записано, сколько пицц заказал этот квартал. Сколько пицц заказал <b>весь город</b>?",
+      inLines: G_IN, outp: "Выведите одно число — сколько пицц заказал весь город.", explain: "Улица 1: 3 + 1 + 4 = 8. Улица 2: 1 + 5 + 9 = 15. Улица 3: 2 + 6 + 5 = 13. Весь город: 8 + 15 + 13 = 36.", tl: 3,
+      readMap: [["3 3", "rows, cols = map(int, input().split())"], ["3 1 4", "grid.append(list(map(int, input().split())))"], ["1 5 9", "grid.append(…) — то же самое в цикле for"], ["2 6 5", "grid.append(…) — и так rows раз"]],
+      readNote: "Каждая строка входа — одна улица. Она становится списком, а вся карта — списком списков: grid[0] — первая улица, grid[0][2] — её третий квартал.",
+      sample: { g: G_SAMPLE }, starter: READ_GC + "\ntotal = 0                 # копилка: пиццы всего города\nfor street in grid:       # street — одна улица: список чисел\n    for block in street:  # block — один квартал этой улицы\n        total = ...\nprint(total)\n", help: "код почти готов, допиши одно место",
+      tip: "Цикл в цикле: внешний перебирает улицы, внутренний — кварталы на улице. В копилку total прибавляй block, как в первой серии.",
+      viz: (d) => gridViz(d), day: () => ({ g: grid(rint(3, 6), rint(3, 7), 20) }), input: (d) => gridIn(d.g), answer: (d) => String(d.g.flat().reduce((s, x) => s + x, 0)) },
+    { title: "Улицы", layer: "Итоги улиц", coins: 30,
+      story: "Курьеров раздают по улицам: сколько пицц заказала улица, столько поездок туда и будет. Для <b>каждой улицы</b> выведи, сколько пицц она заказала.",
+      inLines: G_IN, outp: "Выведите R чисел через пробел — сколько пицц заказала 1-я, 2-я, …, R-я улица.", explain: "Улица 1: 3 + 1 + 4 = 8. Улица 2: 1 + 5 + 9 = 15. Улица 3: 2 + 6 + 5 = 13.", tl: 3,
+      sample: { g: G_SAMPLE }, starter: READ_GC + "\nstreets = []   # сколько пицц заказала каждая улица\n# твой цикл: для каждой улицы посчитай её пиццы и положи в streets\n\nprint(*streets)\n", help: "цикл пишешь сама",
+      tip: "for street in grid: — и для каждой улицы streets.append(sum(street)). Можно и копилкой: обнуляй её в начале каждой улицы.",
+      viz: (d) => gridViz(d), day: () => ({ g: grid(rint(3, 6), rint(3, 7), 20) }), input: (d) => gridIn(d.g), answer: (d) => d.g.map((r) => r.reduce((s, x) => s + x, 0)).join(" ") },
+    { title: "Район", layer: "Район", coins: 40,
+      story: "Новый курьер возит пиццу в один район — прямоугольник на карте: улицы с <b>r1</b> по <b>r2</b>, кварталы с <b>c1</b> по <b>c2</b> включительно. Сколько пицц заказал этот район? Улицы и кварталы нумеруются с единицы.",
+      inLines: ["В первой строке — два числа R и C (1 ≤ R, C ≤ 10).", "Дальше R строк по C чисел от 0 до 50 — карта.", "В последней строке — четыре числа r1 c1 r2 c2 (1 ≤ r1 ≤ r2 ≤ R, 1 ≤ c1 ≤ c2 ≤ C): левый верхний и правый нижний угол района."],
+      outp: "Выведите одно число — сколько пицц заказал район.", explain: "Улицы 2–3, кварталы 2–3: 5 + 9 + 6 + 5 = 25.", tl: 3,
+      readMap: [["2 2 3 3", "r1, c1, r2, c2 = map(int, input().split())"]], readNote: "Карту ты уже читать умеешь. Новая — последняя строка:",
+      sample: { g: G_SAMPLE, q: [2, 2, 3, 3] }, starter: READ_G + "# прочитай последнюю строку: r1, c1, r2, c2\n# выведи, сколько пицц заказали в районе\n", help: "дана только карта, остальное — твоё",
+      tip: "Улицы с r1 по r2 — это for r in range(r1 - 1, r2). На каждой такой улице кварталы с c1 по c2 — срез grid[r][c1 - 1:c2].",
+      viz: (d) => gridViz(d, (k) => { const C = d.g[0].length, r = Math.floor(k / C) + 1, c = k % C + 1; return r >= d.q[0] && r <= d.q[2] && c >= d.q[1] && c <= d.q[3]; }),
+      day: () => { const R = rint(3, 7), C = rint(3, 7); return { g: grid(R, C, 20), q: randRect(R, C) }; },
+      input: (d) => gridIn(d.g) + d.q.join(" ") + "\n", answer: (d) => String(rect(d.g, d.q)) },
+    { title: "Табло-карта", layer: "Двумерное табло", coins: 50,
+      story: "В штабе повесили табло-карту такого же размера, как город. В клетке (r, c) табло показывает, сколько пицц заказали все кварталы <b>от левого верхнего угла карты до этой клетки</b>: улицы с 1-й по r-ю, кварталы с 1-го по c-й. Выведи всё табло.",
+      inLines: G_IN, outp: "Выведите R строк по C чисел через пробел — табло-карту.",
+      explain: "Клетка (2, 2): 3 + 1 + 1 + 5 = 10. Её можно собрать из соседей на табло: сверху 4, слева 4, а угол 3 попал в оба — 4 + 4 − 3 + 5 = 10.", tl: 3,
+      sample: { g: G_SAMPLE }, starter: READ_GC + "\n# табло с запасом: лишняя строка нулей сверху и лишний столбец нулей слева\ntable = [[0] * (cols + 1) for r in range(rows + 1)]\nfor r in range(rows):\n    for c in range(cols):\n        # клетка табло = сверху + слева − угол + сам квартал\n        table[r + 1][c + 1] = ...\nfor r in range(1, rows + 1):\n    print(*table[r][1:])\n", help: "главная строка — твоя",
+      tip: "Сверху — table[r][c + 1], слева — table[r + 1][c], угол — table[r][c], сам квартал — grid[r][c]. Угол вычитаем, потому что он попал и в «сверху», и в «слева».",
+      viz: (d) => gridViz(d), day: () => ({ g: grid(rint(2, 6), rint(2, 7), 20) }), input: (d) => gridIn(d.g),
+      answer: (d) => pre2(d.g).slice(1).map((r) => r.slice(1).join(" ")).join("\n") },
+    { title: "Босс: миллион вопросов", layer: "Город накормлен", coins: 120, boss: true,
+      story: "Звонят из всех районов сразу: <b>Q</b> вопросов «сколько пицц в районе r1 c1 r2 c2?». А карта огромная — 1000 улиц по 100 кварталов. Если для каждого вопроса складывать район заново, город останется голодным. Построй табло-карту один раз — и отвечай на каждый вопрос четырьмя числами с табло.",
+      inLines: ["В первой строке — два числа R и C (1 ≤ R ≤ 1000, 1 ≤ C ≤ 100).", "Дальше R строк по C чисел от 0 до 9 — карта.", "Затем число Q (1 ≤ Q ≤ 50 000) — сколько вопросов.", "Дальше Q строк по четыре числа r1 c1 r2 c2 — районы."],
+      outp: "Выведите Q строк: ответ на каждый вопрос.",
+      explain: "Весь город — 36. Район 2 2 3 3 по табло: 36 − 8 − 6 + 3 = 25. Район 1 2 2 3: 1 + 4 + 5 + 9 = 19.", tl: 6,
+      sample: { g: G_SAMPLE, qs: [[1, 1, 3, 3], [2, 2, 3, 3], [1, 2, 2, 3]] },
+      starter: "# босс: вся программа твоя. Имена — понятные: rows, cols, grid, table, questions\n", help: "босс: пустой лист",
+      tip: "Район r1 c1 r2 c2 = table[r2][c2] − table[r1 − 1][c2] − table[r2][c1 − 1] + table[r1 − 1][c1 − 1]. Нарисуй на бумаге: большой прямоугольник от угла карты, минус полоса сверху, минус полоса слева, плюс угол, который вычли дважды.",
+      slow: "Слишком долго: для каждого вопроса программа заново складывает район. Построй табло-карту один раз — и отвечай четырьмя числами с табло.",
+      bigLabel: () => "1000 × 100 кварталов, 50 000 вопросов", bigWait: "Телефоны разрываются, программа отвечает…",
+      viz: (d) => gridViz(d),
+      day: (big) => { const R = big ? 1000 : rint(3, 6), C = big ? 100 : rint(3, 7), Q = big ? 50000 : rint(3, 6);
+        return { g: grid(R, C, big ? 9 : 20), qs: Array.from({ length: Q }, () => randRect(R, C)), big }; },
+      input: (d) => gridIn(d.g) + d.qs.length + "\n" + d.qs.map((q) => q.join(" ")).join("\n") + "\n",
+      answer: (d) => { const P = pre2(d.g); return d.qs.map(([r1, c1, r2, c2]) => P[r2][c2] - P[r1 - 1][c2] - P[r2][c1 - 1] + P[r1 - 1][c1 - 1]).join("\n"); } },
+  ];
+
+  // ---------- Серия 3. Доставка: метки +1 и −1 (разностный массив) ----------
+  const shiftsOf = (n, k, len) => Array.from({ length: k }, () => { const l = rint(1, n); return [l, Math.min(n, l + rint(0, len))]; });
+  const marksOf = (n, sh) => { const m = new Array(n + 1).fill(0); sh.forEach(([l, r]) => { m[l - 1]++; m[r]--; }); return m.slice(0, n); };
+  const roadOf = (n, sh) => { let now = 0; return marksOf(n, sh).map((x) => (now += x)); };
+  const shiftsIn = (d) => `${d.n} ${d.sh.length}\n${d.sh.map((x) => x.join(" ")).join("\n")}\n`;
+  const shiftsDay = () => { const n = rint(8, 16); return { n, sh: shiftsOf(n, rint(2, 6), n) }; };
+  const roadViz = (d) => ({ kind: "tape", values: roadOf(d.n, d.sh), meter: (s, x) => `Сейчас на дороге: <b>${x}</b>`, total: () => "Смена закончилась — все скутеры в гараже." });
+  function promoted(d) { const m = new Array(d.a.length + 1).fill(0); d.pr.forEach(([l, r, x]) => { m[l - 1] += x; m[r] -= x; }); let add = 0; return d.a.map((v, h) => v + (add += m[h])); }
+  const SH_SAMPLE = { n: 6, sh: [[1, 3], [2, 5], [5, 6]] };
+  const SH_IN = ["В первой строке — два числа N и K (1 ≤ N ≤ 24, 1 ≤ K ≤ 10): сколько часов работает доставка и сколько курьеров.", "Дальше K строк по два числа L и R (1 ≤ L ≤ R ≤ N): первый и последний час смены курьера."];
+  const S3 = [
+    { title: "Курьеры на смене", layer: "Первые скутеры", coins: 30,
+      story: "Хозяйка купила скутеры! Курьер выходит в начале часа <b>L</b> и возвращается в конце часа <b>R</b> — он на дороге во все часы с L по R включительно. Диспетчеру нужно табло: сколько курьеров на дороге <b>в каждый час</b>.",
+      inLines: SH_IN, outp: "Выведите N чисел через пробел — сколько курьеров на дороге в 1-й, 2-й, …, N-й час.",
+      explain: "Смены 1–3, 2–5 и 5–6. Во 2-й час на дороге первый и второй курьер — 2. В 4-й только второй — 1.", tl: 3,
+      readMap: [["6 3", "hours, couriers = map(int, input().split())"], ["1 3", "start, end = map(int, input().split()) — в цикле, couriers раз"]],
+      sample: SH_SAMPLE, starter: "hours, couriers = map(int, input().split())\nroad = [0] * hours    # road[h] — сколько курьеров на дороге в час h + 1\nfor i in range(couriers):\n    start, end = map(int, input().split())\n    # отметь этого курьера во всех часах его смены\n\nprint(*road)\n", help: "цикл по смене пишешь сама",
+      tip: "Часы с start по end — это road[start - 1] … road[end - 1], то есть for hour in range(start - 1, end): road[hour] += 1.",
+      viz: roadViz, day: shiftsDay, input: shiftsIn, answer: (d) => roadOf(d.n, d.sh).join(" ") },
+    { title: "Табло наоборот", layer: "Табло наоборот", coins: 30,
+      story: "Ночью табло на печи сломалось и заработало наоборот: от ленты остались только показания табло — сколько пицц испекли <b>с утра</b> после каждого часа. А хозяйке нужна лента: сколько пицц испекли <b>в каждый час</b>. Восстанови её.",
+      inLines: ["В первой строке — число N (1 ≤ N ≤ 24).", "Во второй строке — N чисел: показания табло после 1-го, 2-го, …, N-го часа."],
+      outp: "Выведите N чисел через пробел — сколько пицц испекли в каждый час.",
+      explain: "Первый час — 3. Второй: 10 − 3 = 7. Третий: 12 − 10 = 2. Четвёртый: 21 − 12 = 9. Пятый: 25 − 21 = 4.", tl: 3,
+      sample: { a: [3, 7, 2, 9, 4] }, starter: "hours = int(input())\nboard = list(map(int, input().split()))   # показания табло\npizzas = []                               # лента: пиццы за каждый час\n# пиццы за час = табло сейчас − табло час назад (а до первого часа табло показывало 0)\n\nprint(*pizzas)\n", help: "цикл пишешь сама",
+      tip: "Запоминай, что табло показывало час назад: before = 0, а в цикле pizzas.append(x - before) и before = x. Табло складывает — а здесь вычитаем: это действие наоборот.",
+      day: () => ({ a: Array.from({ length: rint(8, 16) }, () => rint(0, 25)) }), input: (d) => `${d.a.length}\n${pre(d.a).slice(1).join(" ")}\n`, answer: (d) => d.a.join(" ") },
+    { title: "Метки на ленте", layer: "Метки +1 и −1", coins: 40,
+      story: "Диспетчер придумал хитрость: не отмечать курьера во всех часах смены, а поставить всего <b>две метки</b>. В час, когда курьер выходит, — <b>+1</b>. В час сразу после его смены — <b>−1</b>. Если смена кончилась в последний час, вторую метку ставить некуда. Меток в одном часе может быть несколько — они складываются. Выведи сумму меток в каждом часе.",
+      inLines: SH_IN, outp: "Выведите N чисел через пробел — сумму меток в 1-м, 2-м, …, N-м часу.",
+      explain: "Смена 1–3: +1 в час 1, −1 в час 4. Смена 2–5: +1 в час 2, −1 в час 6. Смена 5–6: +1 в час 5, а часа после 6-го нет. Теперь сложи метки с утра: 1, 2, 2, 1, 2, 1 — это табло курьеров из первого заказа!", tl: 3,
+      sample: SH_SAMPLE, starter: "hours, couriers = map(int, input().split())\nmarks = [0] * (hours + 1)   # на клетку больше: метка «после последнего часа» ляжет туда и никому не помешает\nfor i in range(couriers):\n    start, end = map(int, input().split())\n    # две метки: +1 в час start, −1 в час end + 1\n\nprint(*marks[:hours])\n", help: "две строки — твои",
+      tip: "Час start — это marks[start - 1], а час end + 1 — это marks[end]. Значит: marks[start - 1] += 1 и marks[end] -= 1. Лишняя клетка в конце ловит метки после последнего часа.",
+      viz: (d) => ({ kind: "tape", values: marksOf(d.n, d.sh), meter: (s) => `Сумма меток с утра: <b>${s}</b> — столько курьеров на дороге` }),
+      day: shiftsDay, input: shiftsIn, answer: (d) => marksOf(d.n, d.sh).join(" ") },
+    { title: "Час пик", layer: "Час пик", coins: 60, big: true,
+      story: "Доставка работает круглосуточно уже 50 000 часов, курьеров — 50 000. Когда на дороге <b>больше всего</b> курьеров? Отмечать каждого курьера во всех часах смены — слишком долго: скутеры вернутся раньше, чем программа досчитает. Метки и табло — быстро.",
+      inLines: ["В первой строке — два числа N и K (1 ≤ N, K ≤ 50 000).", "Дальше K строк по два числа L и R (1 ≤ L ≤ R ≤ N): первый и последний час смены курьера."],
+      outp: "Выведите два числа через пробел: сколько курьеров было на дороге в самый загруженный час и номер первого такого часа.",
+      explain: "Табло курьеров: 1 2 2 1 2 1. Больше всего — 2, впервые во 2-й час.", tl: 6,
+      sample: SH_SAMPLE, starter: "# метки из прошлого заказа, потом сложи их с утра — получится табло курьеров\n", help: "всю программу пишешь сама",
+      tip: "Поставь метки, потом иди по часам с копилкой now: now += marks[hour] — столько курьеров на дороге в час hour + 1. Запоминай наибольшее и его час. Сравнивай строго now > best — тогда останется первый такой час.",
+      slow: "Слишком долго: программа отмечает курьера в каждом часе смены. Поставь две метки — и сложи их с утра.",
+      bigLabel: () => "50 000 часов, 50 000 курьеров", bigWait: "Скутеры носятся по городу, программа считает…",
+      viz: roadViz, day: (big) => { const n = big ? 50000 : rint(8, 16); return { n, sh: shiftsOf(n, big ? 50000 : rint(2, 7), n), big }; }, input: shiftsIn,
+      answer: (d) => { let best = -1, at = 0; roadOf(d.n, d.sh).forEach((x, h) => { if (x > best) { best = x; at = h + 1; } }); return best + " " + at; } },
+    { title: "Босс: акции по всей сети", layer: "Всё доставлено", coins: 150, boss: true,
+      story: "Финал сезона! Лента пиццерии — <b>N</b> часов. Хозяйка запустила <b>K</b> акций: «с часа L по час R каждый час пеките на X пицц больше». А потом бухгалтер задал <b>Q</b> вопросов: сколько пицц испекли с часа A по час B — уже с акциями? Нужны обе суперсилы: метки для акций и табло для вопросов.",
+      inLines: ["В первой строке — три числа N, K и Q (1 ≤ N, K, Q ≤ 30 000).", "Во второй строке — N чисел от 0 до 60: сколько пицц пекли в каждый час до акций.", "Дальше K строк по три числа L R X (1 ≤ L ≤ R ≤ N, 1 ≤ X ≤ 9): акция.", "Дальше Q строк по два числа A B (1 ≤ A ≤ B ≤ N): вопрос бухгалтера."],
+      outp: "Выведите Q строк — ответ на каждый вопрос с учётом всех акций.",
+      explain: "Акции: часы 2–4 по +1 и часы 4–5 по +2. Лента с акциями: 3 8 3 12 6. С 1-го по 5-й час — 32, с 3-го по 4-й — 3 + 12 = 15.", tl: 6,
+      sample: { a: [3, 7, 2, 9, 4], pr: [[2, 4, 1], [4, 5, 2]], qs: [[1, 5], [3, 4]] },
+      starter: "# босс: вся программа твоя. Метки для акций → новая лента → табло → ответы\n", help: "босс: пустой лист",
+      tip: "1) Метки: marks[L − 1] += X, marks[R] −= X. 2) Иди по часам с копилкой add (сумма меток с утра): в час hour + 1 испекли pizzas[hour] + add. 3) По новой ленте строй табло prefix. 4) Ответ на вопрос A B: prefix[B] − prefix[A − 1].",
+      slow: "Слишком долго: акции или вопросы считаются по каждому часу заново. Метки — для акций, табло — для вопросов.",
+      bigLabel: () => "30 000 часов, 30 000 акций, 30 000 вопросов", bigWait: "Бухгалтер щёлкает счётами, программа считает…",
+      viz: (d) => ({ kind: "tape", values: promoted(d), meter: (s) => `Пицц с утра, с акциями: <b>${s}</b>` }),
+      day: (big) => { const n = big ? 30000 : rint(8, 14);
+        return { a: Array.from({ length: n }, () => rint(0, big ? 60 : 25)), pr: shiftsOf(n, big ? 30000 : rint(1, 4), n).map(([l, r]) => [l, r, rint(1, 9)]), qs: shiftsOf(n, big ? 30000 : rint(2, 5), n), big }; },
+      input: (d) => `${d.a.length} ${d.pr.length} ${d.qs.length}\n${d.a.join(" ")}\n${d.pr.map((x) => x.join(" ")).join("\n")}\n${d.qs.map((x) => x.join(" ")).join("\n")}\n`,
+      answer: (d) => { const p = pre(promoted(d)); return d.qs.map(([a, b]) => p[b] - p[a - 1]).join("\n"); } },
+  ];
+
+  // Серии идут по очереди: следующая открывается, когда пройдена предыдущая.
+  const SERIES = [
+    { tab: "Пицца", orders: S1, intro: "Пиццерия открывается. Повар записывает на ленту, сколько пицц испёк за каждый час, — из этой ленты мы соберём <b>табло</b>.",
+      zero: "Тесто раскатано", cap: "Начинка: ", doneCap: "Пицца готова!", wait: "Откроется, когда пицца выйдет из печи.", nextH: "В следующей серии",
+      next: "«Ира Пицца Коин» растёт: теперь это сеть пиццерий на карте города. Красные кварталы — самые голодные. Сколько пицц заказали в любом прямоугольнике карты — и как ответить на 50 000 таких вопросов сразу? Табло на печи станет двумерным." },
+    { tab: "Город", orders: S2, intro: "Пиццерия стала сетью. Город — это таблица: улицы сверху вниз, кварталы слева направо, в каждой клетке — сколько пицц заказал квартал. Табло становится <b>двумерным</b>.",
+      zero: "Карта пока пустая", cap: "На карте: ", doneCap: "Город накормлен!", wait: "Откроется, когда город будет накормлен.", nextH: "В следующей серии",
+      next: "Хозяйка купила скутеры — у пиццерии своя доставка. Курьеры уходят на смены, акции идут волнами, и диспетчеру нужно знать, сколько скутеров на дороге в каждый час. Табло умеет складывать, а в следующей серии научимся делать наоборот." },
+    { tab: "Доставка", orders: S3, intro: "У пиццерии своя доставка на скутерах. Курьеры работают сменами, а диспетчер учится ставить на ленту метки <b>+1 и −1</b> — это табло наоборот.",
+      zero: "Скутеры в гараже", cap: "Доставка: ", doneCap: "Всё доставлено!", wait: "Откроется, когда все пиццы будут доставлены.", nextH: "Конец сезона",
+      next: "Сезон закончен! Ты строишь табло на ленте и на карте и ставишь метки +1 и −1 — с этим решают настоящие олимпиадные задачи. Новые серии — на занятиях." },
+  ];
+  const ORDERS = [];
+  SERIES.forEach((S, s) => S.orders.forEach((o, k) => { o.s = s; o.k = k; ORDERS.push(o); }));
+  const START = SERIES.map((S, s) => ORDERS.findIndex((o) => o.s === s));
+  const prog = (s) => Math.max(0, Math.min(SERIES[s].orders.length, done - START[s]));   // сколько заказов серии готово
   const sampleIn = (o) => o.input(o.sample);
 
   // ---------- Python в браузере (Skulpt) ----------
   let pyReady = false;
   function runPy(code, input, limitMs) {
     const lines = input.split("\n"); let k = 0, out = "";
-    Sk.configure({ output: (t) => { out += t; if (out.length > 200000) throw new Error("Программа печатает слишком много."); },
+    Sk.configure({ output: (t) => { out += t; if (out.length > 2000000) throw new Error("Программа печатает слишком много."); },
       read: (f) => { if (!Sk.builtinFiles || Sk.builtinFiles.files[f] === undefined) throw "Нет файла " + f; return Sk.builtinFiles.files[f]; },
       inputfun: () => (k < lines.length ? lines[k++] : ""), inputfunTakesPrompt: true,
       __future__: Sk.python3, execLimit: limitMs, yieldLimit: 200 });
@@ -928,7 +1092,7 @@ window.ReadInput = (function () {
   function makeEditor(ta, i, el) {
     if (!window.CodeMirror) { // без библиотеки — простое поле
       ta.addEventListener("input", () => { saved.code[i] = ta.value; save(); });
-      return { getValue: () => ta.value, setValue: (v) => (ta.value = v), mark() {}, clear() {} };
+      return { getValue: () => ta.value, setValue: (v) => (ta.value = v), mark() {}, clear() {}, refresh() {} };
     }
     const cm = CodeMirror.fromTextArea(ta, {
       mode: "python", lineNumbers: true, indentUnit: 4, tabSize: 4, indentWithTabs: false, matchBrackets: true, autoCloseBrackets: true, viewportMargin: Infinity,
@@ -948,7 +1112,7 @@ window.ReadInput = (function () {
     let marked = null;
     cm.on("change", () => { saved.code[i] = cm.getValue(); save(); if (marked !== null) { cm.removeLineClass(marked, "background"); marked = null; } });
     return {
-      getValue: () => cm.getValue(), setValue: (v) => cm.setValue(v),
+      getValue: () => cm.getValue(), setValue: (v) => cm.setValue(v), refresh: () => cm.refresh(),
       mark(line, cls) { if (marked !== null) cm.removeLineClass(marked, "background"); marked = null; if (line) { marked = cm.addLineClass(line - 1, "background", cls); cm.scrollIntoView({ line: line - 1, ch: 0 }, 40); } },
       clear() { if (marked !== null) cm.removeLineClass(marked, "background"); marked = null; },
     };
@@ -991,17 +1155,17 @@ window.ReadInput = (function () {
     el.className = "ticket"; el.id = "order-" + (i + 1);
     const sIn = sampleIn(o), sOut = o.answer(o.sample);
     el.innerHTML =
-      `<div class="t-head"><span class="t-no">Заказ ${i + 1}${o.boss ? " · босс" : ""}</span><h2 class="t-title">${o.title}</h2><span class="t-state"></span></div>
+      `<div class="t-head"><span class="t-no">Заказ ${o.k + 1}${o.boss ? " · босс" : ""}</span><h2 class="t-title">${o.title}</h2><span class="t-state"></span></div>
       <div class="t-body"><p class="t-story">${o.story}</p>
       <div class="io">
         <section><h3>Входные данные</h3>${o.inLines.map((t) => `<p>${esc(t)}</p>`).join("")}</section>
         <section><h3>Выходные данные</h3><p>${esc(o.outp)}</p></section>
         <section><h3>Пример</h3><div class="ex-wrap"><table class="ex"><tr><th>Ввод</th><th>Вывод</th></tr><tr><td><pre>${esc(sIn.trimEnd())}</pre></td><td><pre>${esc(sOut)}</pre></td></tr></table></div>
           <p class="expl"><b>Пояснение.</b> ${esc(o.explain)}</p><p class="tl">Ограничение времени: ${o.tl} с.</p></section>
-        ${o.readMap ? `<section class="readmap"><h3>Как прочитать вход <button class="ri-i" type="button" data-ri title="Выполнение по шагам: input → split → map → list">🐞 Debug</button></h3>${o.readNote ? `<p>${esc(o.readNote)}</p>` : ""}${o.readMap.map(([line, py]) => `<div class="rm-row"><code class="rm-in">${esc(line)}</code><span aria-hidden="true">→</span><code class="rm-py">${esc(py)}</code></div>`).join("")}</section>` : ""}
+        ${o.readMap ? `<section class="readmap"><h3>Как прочитать вход ${o.sample.a ? '<button class="ri-i" type="button" data-ri title="Выполнение по шагам: input → split → map → list">🐞 Debug</button>' : ""}</h3>${o.readNote ? `<p>${esc(o.readNote)}</p>` : ""}${o.readMap.map(([line, py]) => `<div class="rm-row"><code class="rm-in">${esc(line)}</code><span aria-hidden="true">→</span><code class="rm-py">${esc(py)}</code></div>`).join("")}</section>` : ""}
       </div>
       <div class="work"><div>
-        <label for="code-${i + 1}" class="hint" style="display:block;margin:0 0 6px">Программа для заказа ${i + 1} · ${o.help}</label>
+        <label for="code-${i + 1}" class="hint" style="display:block;margin:0 0 6px">Программа для заказа ${o.k + 1} · ${o.help}</label>
         <textarea class="editor" id="code-${i + 1}" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
         <div class="row"><button class="btn btn-ghost" type="button" data-try>▶ На примере</button><button class="btn btn-ghost" type="button" data-dbg title="Выполнение по шагам на примере: смотри, как меняются переменные">🐞 Debug</button><button class="btn btn-hot" type="button" data-send>Сдать заказ</button></div>
         <div class="hint">Tab — дописать слово (как в PyCharm) или отступ · Ctrl+Space — все подсказки · Ctrl+Enter — сдать заказ.</div>
@@ -1055,25 +1219,31 @@ window.ReadInput = (function () {
     const o = ORDERS[i], run = el.querySelector(".run"), code = editors[i].getValue();
     busy(el, true); run.innerHTML = "";
     const days = [o.sample, o.day(false), o.day(false), o.day(false)];
-    if (o.boss) days.push(o.day(true));
+    if (o.boss || o.big) days.push(o.day(true));
     let allOk = true;
     for (let t = 0; t < days.length; t++) {
-      const d = days[t], big = d.a.length > 40;
+      const d = days[t], big = !!d.big || (!o.viz && d.a.length > 40);
+      // как показать день: лента часов (по умолчанию) или карта-таблица
+      const vz = !big && (o.viz ? o.viz(d) : { kind: "tape", values: d.a, hl: (h) => d.l && h + 1 >= d.l && h + 1 <= d.r,
+        meter: (s) => `Пицц с утра: <b>${s}</b>`, total: (s) => `Пицц за день: <b>${s}</b>` });
+      const tilesHtml = big ? "" : `<div class="tiles${vz.kind === "grid" ? " grid" : ""}"${vz.kind === "grid" ? ` style="--cols:${vz.cols}"` : ""}>${vz.values.map((x, h) =>
+        `<span class="tile${vz.hl && vz.hl(h) ? " shift" : ""}" title="${vz.title ? vz.title(h) : "час " + (h + 1)}">${x}</span>`).join("")}</div>`;
+      const label = big ? " · " + (o.bigLabel ? o.bigLabel(d) : d.a.length.toLocaleString("ru-RU") + " часов") : "";
       const card = document.createElement("div"); card.className = "test";
-      card.innerHTML = `<div class="test-h"><span>${t === 0 ? "День из примера" : "День " + (t + 1)}${big ? " · " + d.a.length.toLocaleString("ru-RU") + " часов" : ""}</span><span class="ms"></span></div>
-        ${big ? "" : `<div class="tiles">${d.a.map((x, h) => `<span class="tile${d.l && h + 1 >= d.l && h + 1 <= d.r ? " shift" : ""}" title="час ${h + 1}">${x}</span>`).join("")}</div>`}
-        <div class="meter">${big ? "Печь гудит, программа считает…" : "Пицц с утра: <b>0</b>"}</div><div class="verdict"></div>`;
+      card.innerHTML = `<div class="test-h"><span>${t === 0 ? "День из примера" : "День " + (t + 1)}${label}</span><span class="ms"></span></div>
+        ${tilesHtml}<div class="meter">${big ? (o.bigWait || "Печь гудит, программа считает…") : vz.meter(0, 0)}</div><div class="verdict"></div>`;
       run.appendChild(card);
-      const res = runPy(code, o.input(d), o.boss ? 6000 : 3000);
-      if (!big) { // день идёт час за часом — табло растёт, как префиксная сумма
-        const tiles = card.querySelectorAll(".tile"), meter = card.querySelector(".meter b");
+      const res = runPy(code, o.input(d), (o.tl || 3) * 1000);
+      if (!big) { // день идёт час за часом (или квартал за кварталом) — табло растёт, как префиксная сумма
+        const tiles = card.querySelectorAll(".tile"), meter = card.querySelector(".meter");
         let s = 0;
-        for (let h = 0; h < tiles.length; h++) { s += d.a[h]; tiles[h].classList.add("lit"); meter.textContent = s; if (!reduce) await sleep(t === 0 ? 70 : 40); }
-        card.querySelector(".meter").innerHTML = `Пицц за день: <b>${s}</b>`;
+        for (let h = 0; h < tiles.length; h++) { s += vz.values[h]; tiles[h].classList.add("lit"); meter.innerHTML = vz.meter(s, vz.values[h]); if (!reduce) await sleep(t === 0 ? 70 : 40); }
+        if (vz.total) meter.innerHTML = vz.total(s);
       }
       const r = await res, want = o.answer(d), got = norm(r.out);
       card.querySelector(".ms").textContent = Math.round(r.ms) + " мс";
       const v = card.querySelector(".verdict");
+      if (!r.ok && o.slow && /^Слишком долго/.test(r.err)) r.err = o.slow;
       if (!r.ok) { v.className = "verdict bad"; v.textContent = r.err; allOk = false; markErr(i, r.err); }
       else if (got === want) { v.className = "verdict ok"; v.textContent = `Программа ответила ${short(got)} ✓`; if (big) card.querySelector(".meter").textContent = "Досчитала вовремя."; }
       else { v.className = "verdict bad"; v.innerHTML = `Программа ответила ${esc(short(got) || "пустоту")}, а нужно ${esc(short(want))}`; allOk = false;
@@ -1111,11 +1281,37 @@ window.ReadInput = (function () {
   const walletTotal = () => ORDERS.slice(0, done).reduce((s, o) => s + o.coins, 0) + 5 * Object.keys(saved.stars || {}).length;
   const short = (s) => (s.length > 60 ? s.slice(0, 60) + "…" : s);
 
-  const hot = new Set([10, 11, 18, 19, 20, 26, 27, 28]);
-  for (let k = 0; k < 40; k++) { const s = document.createElement("span"); s.textContent = (k * 7 + 3) % 10; if (hot.has(k)) s.className = "hot"; $("city").appendChild(s); }
+  // ---------- серии: вкладки, какая открыта, финал каждой ----------
+  const DECO = [
+    () => { const hot = new Set([10, 11, 18, 19, 20, 26, 27, 28]); return Array.from({ length: 40 }, (_, k) => `<span${hot.has(k) ? ' class="hot"' : ""}>${(k * 7 + 3) % 10}</span>`).join(""); },
+    () => ["+1", "0", "0", "−1", "+1", "+1", "0", "−1", "0", "+1", "−1", "−1", "0", "+1", "0", "−1"].map((x) => `<span${x === "0" ? "" : ' class="hot"'}>${x}</span>`).join(""),
+    () => "",
+  ];
+  const opened = (s) => done >= START[s];
+  const finished = (s) => prog(s) === SERIES[s].orders.length;
+  let view = done < ORDERS.length ? ORDERS[done].s : SERIES.length - 1;   // открываем серию, где сейчас идёт работа
+  SERIES.forEach((S, s) => {
+    const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "tab");
+    b.addEventListener("click", () => showSeries(s)); $("series").appendChild(b);
+  });
+  function showSeries(s) {
+    if (!opened(s) || s === view) return;
+    view = s; render(false);
+    editors.forEach((ed, i) => { if (ORDERS[i].s === s) ed.refresh(); });   // редактор, который был спрятан, надо перемерить
+  }
+  $("next-series").addEventListener("click", () => { showSeries(view + 1); $("series").scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" }); });
 
   function render(animate) {
+    const S = SERIES[view], n = S.orders.length, p = prog(view), fin = finished(view);
+    $("series").querySelectorAll("button").forEach((b, s) => {
+      const op = opened(s);
+      b.disabled = !op; b.setAttribute("aria-selected", s === view ? "true" : "false");
+      b.title = op ? "" : `Откроется, когда пройдёшь серию ${s}`;
+      b.innerHTML = `<span class="sn">${s + 1}</span>${SERIES[s].tab}${finished(s) ? " ✓" : op ? "" : " 🔒"}`;
+    });
+    $("series-intro").innerHTML = S.intro;
     document.querySelectorAll(".ticket").forEach((el, i) => {
+      el.hidden = ORDERS[i].s !== view;
       const st = el.querySelector(".t-state");
       el.classList.toggle("done", i < done); el.classList.toggle("locked", i > done);
       st.className = "t-state " + (i < done ? "st-done" : i === done ? "st-open" : "st-lock");
@@ -1123,20 +1319,26 @@ window.ReadInput = (function () {
     });
     const coins = walletTotal();
     animate ? countTo(coins) : ($("wallet").textContent = walletShown = coins);
-    $("layer-cap").textContent = done === 0 ? "Тесто раскатано" : done < ORDERS.length ? "Начинка: " + ORDERS.slice(0, done).map((o) => o.layer.toLowerCase()).join(", ") : "Пицца готова!";
-    $("step-cap").textContent = done < ORDERS.length ? `Заказ ${done + 1} из ${ORDERS.length}` : "Все заказы выполнены";
-    $("finale").classList.toggle("locked", done < ORDERS.length);
-    $("finale-text").textContent = done < ORDERS.length ? "Откроется, когда пицца выйдет из печи."
-      : "«Ира Пицца Коин» растёт: теперь это сеть пиццерий на карте города. Красные кварталы — самые голодные. Сколько пицц продано в любом прямоугольнике карты — и как ответить на миллион таких вопросов сразу? Табло на печи станет двумерным. Приходи на занятие.";
-    if (animate) { target = done; drop = 0; if (done === ORDERS.length) bake = 0.0001; }
-    if (animate && done < ORDERS.length && !holdScroll) setTimeout(() => $("order-" + (done + 1)).scrollIntoView({ behavior: "smooth", block: "start" }), 1400);
+    $("layer-cap").textContent = p === 0 ? S.zero : p < n ? S.cap + S.orders.slice(0, p).map((o) => o.layer.toLowerCase()).join(", ") : S.doneCap;
+    $("step-cap").textContent = p < n ? `Заказ ${p + 1} из ${n}` : "Все заказы выполнены";
+    $("finale").classList.toggle("locked", !fin);
+    $("finale-h").textContent = S.nextH;
+    $("finale-text").textContent = fin ? S.next : S.wait;
+    const deco = DECO[view]();
+    $("city").innerHTML = deco; $("city").hidden = !deco; $("city").classList.toggle("tape", view === 1);
+    const nb = $("next-series"), more = view + 1 < SERIES.length;
+    nb.hidden = !(fin && more); nb.textContent = more ? `Смотреть серию ${view + 2}: ${SERIES[view + 1].tab} →` : "";
+    if (animate) { target = Math.min(done, S1.length); drop = 0; if (done === S1.length) bake = 0.0001; }
+    if (animate && done < ORDERS.length && ORDERS[done].s === view && !holdScroll) setTimeout(() => $("order-" + (done + 1)).scrollIntoView({ behavior: "smooth", block: "start" }), 1400);
   }
   let walletShown = 0, holdScroll = false;
   function countTo(v) { const from = walletShown, t0 = performance.now();
     const step = (t) => { const k = Math.min(1, (t - t0) / 900); walletShown = Math.round(from + (v - from) * k); $("wallet").textContent = walletShown; if (k < 1) requestAnimationFrame(step); };
     requestAnimationFrame(step); }
   $("reset").addEventListener("click", () => {
-    done = 0; saved.code = {}; saved.stars = {}; save(); shown = 0; target = 0; bake = 0;
+    done = 0; saved.code = {}; saved.stars = {}; save(); shown = 0; target = 0; bake = 0; view = 0;
+    anim.forEach((A) => { if (A) { A.shown = 0; A.drop = 1; } });
+    setTimeout(() => editors.forEach((ed, i) => { if (ORDERS[i].s === 0) ed.refresh(); }), 0);
     editors.forEach((ed, i) => ed.setValue(ORDERS[i].starter));
     document.querySelectorAll(".run").forEach((r) => (r.innerHTML = '<p class="run-empty">Здесь будет видно, как пиццерия проверяет твою программу: час за часом.</p>'));
     render(false); scrollTo({ top: 0, behavior: "smooth" });
@@ -1144,7 +1346,8 @@ window.ReadInput = (function () {
 
   // ---------- сцена: печь и пицца на лопате ----------
   const cv = $("scene"), g = cv.getContext("2d"), W = cv.width, H = cv.height;
-  let shown = done, target = done, drop = 1, bake = done === ORDERS.length ? 1 : 0, shake = 0, tick = 0;
+  let shown = Math.min(done, S1.length), target = shown, drop = 1, bake = done >= S1.length ? 1 : 0, shake = 0, tick = 0;
+  const anim = [null, { shown: prog(1), drop: 1 }, { shown: prog(2), drop: 1 }];   // слои сцен 2-й и 3-й серии
   function rng(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   const rnd = rng(7);
   const pep = Array.from({ length: 11 }, () => { const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * 78; return [Math.cos(a) * r, Math.sin(a) * r * 0.55]; });
@@ -1173,8 +1376,7 @@ window.ReadInput = (function () {
       g.restore(); });
     if (elem) { g.strokeStyle = "rgba(90,50,20,.45)"; g.lineWidth = 2; for (let k = 0; k < 4; k++) { const a = k * Math.PI / 4; g.beginPath(); g.moveTo(cx - Math.cos(a) * 100, cy - Math.sin(a) * 52); g.lineTo(cx + Math.cos(a) * 100, cy + Math.sin(a) * 52); g.stroke(); } }
   }
-  function frame() {
-    tick++;
+  function pizzaFrame() {
     if (shown < target && drop >= 1) { shown++; drop = 0; for (let k = 0; k < 18; k++) sparks.push({ x: W * 0.32 + (rnd() - .5) * 160, y: H * 0.62, vx: (rnd() - .5) * 6, vy: -3 - rnd() * 5, life: 1 }); }
     if (drop < 1) drop = Math.min(1, drop + 0.025);
     if (shown > target) shown = target;
@@ -1186,9 +1388,113 @@ window.ReadInput = (function () {
     else if (bake >= 1) isBaked = true;
     const sx = shake > 0 ? Math.sin(tick * 1.7) * 8 * shake : 0; if (shake > 0) shake = Math.max(0, shake - 0.04);
     pizza(px + sx, py, Math.min(shown, 4), isBaked); g.globalAlpha = 1;
+    drawSparks();
+    if (isBaked && bake >= 1) { g.font = "28px 'Rubik Mono One', Impact, sans-serif"; g.fillStyle = "#23201C"; g.textAlign = "center"; g.fillText("ГОТОВО!", W * 0.32, H * 0.22); }
+  }
+  function drawSparks() {
     for (let k = sparks.length - 1; k >= 0; k--) { const s = sparks[k]; s.x += s.vx; s.y += s.vy; s.vy += 0.25; s.life -= 0.02; if (s.life <= 0) { sparks.splice(k, 1); continue; }
       g.fillStyle = `rgba(244,197,66,${s.life})`; g.beginPath(); g.arc(s.x, s.y, 7, 0, Math.PI * 2); g.fill(); g.strokeStyle = `rgba(201,154,30,${s.life})`; g.lineWidth = 2; g.stroke(); }
-    if (isBaked && bake >= 1) { g.font = "28px 'Rubik Mono One', Impact, sans-serif"; g.fillStyle = "#23201C"; g.textAlign = "center"; g.fillText("ГОТОВО!", W * 0.32, H * 0.22); }
+  }
+  function burst(x, y) { for (let k = 0; k < 18; k++) sparks.push({ x: x + (rnd() - .5) * 160, y, vx: (rnd() - .5) * 6, vy: -3 - rnd() * 5, life: 1 }); }
+  // Слои сцены появляются по одному, как начинка на пицце: a(n) — насколько проявился слой n (0…1).
+  function layers(A, p, bx, by) {
+    if (A.shown < p && A.drop >= 1) { A.shown++; A.drop = 0; burst(bx, by); }
+    if (A.shown > p) A.shown = p;
+    if (A.drop < 1) A.drop = Math.min(1, A.drop + 0.025);
+    return (n) => (A.shown > n ? 1 : A.shown === n ? A.drop : 0);
+  }
+  function rr(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+  function banner(text, alpha, cx = W / 2, cy = H / 2) {
+    g.globalAlpha = alpha; g.font = "28px 'Rubik Mono One', Impact, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    const w = g.measureText(text).width + 56;
+    g.fillStyle = "#23201C"; rr(cx - w / 2, cy - 34, w, 68, 16); g.fill(); g.fillStyle = "#F4C542"; g.fillText(text, cx, cy + 2); g.globalAlpha = 1;
+  }
+
+  // ---------- сцена 2-й серии: карта города ----------
+  const CR = 5, CC = 12, crnd = rng(11), CX = 24, CY = 14, CW = 58, CH = 44, CG = 8;
+  const CITY = Array.from({ length: CR }, () => Array.from({ length: CC }, () => Math.floor(crnd() * 10)));
+  const heat = (v) => { const t = v / 9; return `rgb(${Math.round(247 - 31 * t)},${Math.round(233 - 166 * t)},${Math.round(196 - 150 * t)})`; };
+  const MONO = "'JetBrains Mono', Consolas, monospace";
+  function cityFrame() {
+    const a = layers(anim[1], prog(1), W * 0.45, H * 0.45);
+    g.fillStyle = "#D5E2D9"; g.fillRect(0, 0, W, H);
+    g.fillStyle = "#8E9A93"; rr(CX - CG, CY - CG, CC * (CW + CG) + CG, CR * (CH + CG) + CG, 10); g.fill();   // асфальт
+    g.textAlign = "center"; g.textBaseline = "middle";
+    for (let r = 0; r < CR; r++) for (let c = 0; c < CC; c++) {
+      const x = CX + c * (CW + CG), y = CY + r * (CH + CG), v = CITY[r][c];
+      g.fillStyle = "#F3EEE2"; rr(x, y, CW, CH, 6); g.fill();
+      if (a(4)) { g.globalAlpha = a(4); g.fillStyle = heat(v); rr(x, y, CW, CH, 6); g.fill(); g.globalAlpha = 1; }     // табло-карта: жара
+      if (a(1)) { g.globalAlpha = a(1); g.fillStyle = a(4) > 0.5 && v >= 6 ? "#FFFDF6" : "#23201C"; g.font = `700 20px ${MONO}`;
+        g.fillText(v, x + CW / 2, y + CH / 2 + 1 - (1 - a(1)) * 14); g.globalAlpha = 1; }
+    }
+    if (a(2)) { g.globalAlpha = a(2); g.textAlign = "left"; g.font = `700 18px ${MONO}`; g.fillStyle = "#23201C";      // итоги улиц
+      CITY.forEach((row, r) => g.fillText("= " + row.reduce((s, x) => s + x, 0), CX + CC * (CW + CG) + 8, CY + r * (CH + CG) + CH / 2 + 1)); g.globalAlpha = 1; }
+    if (a(3)) { const x = CX + 3 * (CW + CG) - 5, y = CY + (CH + CG) - 5, w = 5 * (CW + CG) - CG + 10, h = 3 * (CH + CG) - CG + 10;   // район
+      g.globalAlpha = a(3); g.setLineDash([10, 6]); g.lineDashOffset = -tick * 0.5; g.strokeStyle = "#D8432E"; g.lineWidth = 4; rr(x, y, w, h, 10); g.stroke(); g.setLineDash([]);
+      g.fillStyle = "#D8432E"; rr(x + 10, y - 13, 78, 24, 12); g.fill(); g.fillStyle = "#FFFDF6"; g.font = "700 14px Rubik, Arial, sans-serif"; g.textAlign = "center"; g.fillText("район", x + 49, y - 1); g.globalAlpha = 1; }
+    if (a(1)) { const len = CC * (CW + CG), t = (tick * 1.6) % (2 * len), pos = t < len ? t : 2 * len - t, sy = CY + 2 * (CH + CG) - CG / 2;   // курьер на улице
+      g.fillStyle = "#D8432E"; g.beginPath(); g.arc(CX - CG / 2 + pos, sy, 6, 0, Math.PI * 2); g.fill(); g.strokeStyle = "#FFFDF6"; g.lineWidth = 2; g.stroke(); }
+    if (a(5)) { g.globalAlpha = a(5);
+      for (let r = 0; r < CR; r++) for (let c = 0; c < CC; c++) if (CITY[r][c] >= 8) {
+        const x = CX + c * (CW + CG) + CW / 2, y = CY + r * (CH + CG) + 8 + Math.sin(tick / 8 + r + c) * 3;
+        g.fillStyle = "#F4C542"; g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2); g.fill(); g.strokeStyle = "#C99A1E"; g.lineWidth = 2; g.stroke();
+        g.fillStyle = "#A92A1B"; g.beginPath(); g.arc(x - 3, y - 2, 2, 0, Math.PI * 2); g.moveTo(x + 5, y + 2); g.arc(x + 3, y + 2, 2, 0, Math.PI * 2); g.fill(); }
+      banner("ГОРОД НАКОРМЛЕН!", a(5)); }
+  }
+
+  // ---------- сцена 3-й серии: доставка ----------
+  const HOURS = 24, SHIFTS = [[1, 6], [3, 10], [5, 8], [9, 16], [12, 20], [14, 24], [18, 22], [7, 13], [15, 19]];
+  const ROAD = roadOf(HOURS, SHIFTS), MARKS = marksOf(HOURS, SHIFTS), PEAK = Math.max(...ROAD);
+  const TX = 28, TY = 14, TW = 35, TG = 3, TH = 30;
+  function scooter(x, y, col) {
+    g.fillStyle = "#23201C"; g.beginPath(); g.arc(x - 18, y + 12, 8, 0, Math.PI * 2); g.moveTo(x + 28, y + 12); g.arc(x + 20, y + 12, 8, 0, Math.PI * 2); g.fill();
+    g.fillStyle = col; g.beginPath(); g.moveTo(x - 28, y + 6); g.lineTo(x + 16, y + 6); g.quadraticCurveTo(x + 28, y + 4, x + 24, y - 8); g.lineTo(x + 16, y - 8); g.lineTo(x + 8, y - 2); g.lineTo(x - 24, y - 2); g.closePath(); g.fill();
+    g.strokeStyle = "#23201C"; g.lineWidth = 3; g.beginPath(); g.moveTo(x + 20, y - 8); g.lineTo(x + 14, y - 26); g.lineTo(x + 22, y - 28); g.moveTo(x + 2, y - 20); g.lineTo(x + 15, y - 24); g.stroke();
+    g.fillStyle = "#2F5D50"; rr(x - 8, y - 28, 12, 26, 4); g.fill();                                     // курьер
+    g.fillStyle = "#F1C9A5"; g.beginPath(); g.arc(x - 1, y - 34, 7, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#D8432E"; g.beginPath(); g.arc(x - 1, y - 36, 8, Math.PI, 0); g.fill();               // шлем
+    g.fillStyle = "#F3EEE2"; g.fillRect(x - 33, y - 22, 20, 18); g.strokeStyle = "#C99A1E"; g.lineWidth = 2; g.strokeRect(x - 33, y - 22, 20, 18);   // пицца в коробке
+  }
+  function roadFrame() {
+    const a = layers(anim[2], prog(2), W * 0.5, H * 0.55);
+    g.fillStyle = "#E3EDF1"; g.fillRect(0, 0, W, H);
+    g.textAlign = "center"; g.textBaseline = "middle";
+    for (let h = 0; h < HOURS; h++) {                                                    // лента часов: курьеры на дороге
+      const x = TX + h * (TW + TG), v = ROAD[h], peak = a(4) > 0.5 && v === PEAK;
+      g.fillStyle = "#FFFDF6"; rr(x, TY, TW, TH, 5); g.fill();
+      if (a(1)) { g.globalAlpha = a(1); g.fillStyle = peak ? "#D8432E" : `rgba(244,197,66,${0.25 + 0.75 * v / PEAK})`; rr(x, TY, TW, TH, 5); g.fill();
+        g.fillStyle = peak ? "#FFFDF6" : "#23201C"; g.font = `700 15px ${MONO}`; g.fillText(v, x + TW / 2, TY + TH / 2 + 1); g.globalAlpha = 1; }
+      g.fillStyle = "#6B6358"; g.font = `11px ${MONO}`; g.fillText(h + 1, x + TW / 2, TY + TH + 9);
+      if (a(3) && MARKS[h]) { g.globalAlpha = a(3); const up = MARKS[h] > 0; g.fillStyle = up ? "#2E8B57" : "#D8432E"; rr(x + 2, TY + TH + 18, TW - 4, 20, 10); g.fill();
+        g.fillStyle = "#FFFFFF"; g.font = `700 12px ${MONO}`; g.fillText((up ? "+" : "−") + Math.abs(MARKS[h]), x + TW / 2, TY + TH + 28.5); g.globalAlpha = 1; }
+    }
+    if (a(4)) { const h = ROAD.indexOf(PEAK), x = TX + h * (TW + TG) + TW / 2; g.globalAlpha = a(4); g.fillStyle = "#D8432E"; g.font = "700 14px Rubik, Arial, sans-serif"; g.fillText("▲ час пик", x + 22, TY + TH + 52); g.globalAlpha = 1; }
+    const bx = 34, by = 160;                                                             // пиццерия
+    g.fillStyle = "#FFFDF6"; g.fillRect(bx, by, 150, 96);
+    g.fillStyle = "#D8432E"; g.beginPath(); g.moveTo(bx - 12, by + 2); g.lineTo(bx + 75, by - 36); g.lineTo(bx + 162, by + 2); g.fill();
+    g.fillStyle = "#9B4A33"; g.fillRect(bx + 60, by + 46, 30, 50);
+    g.fillStyle = "#23201C"; rr(bx + 18, by + 10, 114, 26, 6); g.fill(); g.fillStyle = "#F4C542"; g.font = "13px 'Rubik Mono One', Impact, sans-serif"; g.fillText("ПИЦЦА", bx + 75, by + 24);
+    if (a(2)) { const x = 214, y = 166; g.globalAlpha = a(2);                           // табло наоборот
+      g.fillStyle = "#23201C"; rr(x, y, 250, 84, 10); g.fill(); g.textAlign = "left"; g.font = `700 16px ${MONO}`;
+      g.fillStyle = "#F4C542"; g.fillText("табло  3 10 12 21 25", x + 14, y + 22);
+      g.fillStyle = "#FFFDF6"; g.fillText("лента  3  7  2  9  4", x + 14, y + 50);
+      g.fillStyle = "#B8CCC4"; g.font = "12px Rubik, Arial, sans-serif"; g.fillText("каждое число — разность соседей табло", x + 14, y + 72); g.textAlign = "center"; g.globalAlpha = 1; }
+    const ry = 270; g.fillStyle = "#3B3F44"; g.fillRect(0, ry, W, 80);                  // дорога
+    g.strokeStyle = "#F4C542"; g.lineWidth = 4; g.setLineDash([26, 18]); g.lineDashOffset = reduce ? 0 : -tick * 2; g.beginPath(); g.moveTo(0, ry + 40); g.lineTo(W, ry + 40); g.stroke(); g.setLineDash([]);
+    const n = [0, 2, 3, 4, 7, 10][anim[2].shown];
+    const tt = reduce ? 0 : tick;
+    for (let k = 0; k < n; k++) { const sp = 1.4 + (k % 3) * 0.45, x = ((tt * sp + k * 137) % (W + 120)) - 60; scooter(x, ry + (k % 2 ? 54 : 26), ["#F4C542", "#2E8B57", "#D8432E", "#FFFDF6"][k % 4]); }
+    if (a(5)) banner("ВСЁ ДОСТАВЛЕНО!", a(5), 712, 206);
+  }
+
+  function frame() {
+    tick++;
+    if (view === 0) pizzaFrame();
+    else {
+      const sx = shake > 0 ? Math.sin(tick * 1.7) * 8 * shake : 0; if (shake > 0) shake = Math.max(0, shake - 0.04);
+      g.save(); g.translate(sx, 0); (view === 1 ? cityFrame : roadFrame)(); g.restore();
+      drawSparks();
+    }
     requestAnimationFrame(frame);
   }
 
