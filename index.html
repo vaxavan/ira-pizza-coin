@@ -586,6 +586,7 @@ li.CodeMirror-hint-active { background: var(--ink); color: var(--paper); } li.Co
 //   pizzas = list(map(int, input().split()))   "3 7 2 9 4" → слова → конвейер int → [3, 7, 2, 9, 4]
 // Один файл и для сайта (страница задачи), и для игры «Пиццакоин» (вставлен в неё целиком).
 // ReadInput.open({ line: "3 7 2 9 4", nLine: "5", aName: "pizzas", nName: "hours" }) — всё, кроме line, можно не передавать.
+// ReadInput.open({ prog: [...] }) — любая программа чтения: распаковка a, b = map(…), карта по строкам в цикле и т. п. (см. open ниже).
 window.ReadInput = (function () {
   const CSS = `
 .ri-ov{position:fixed;inset:0;z-index:300;background:rgba(20,24,32,.55);display:grid;place-items:center;padding:16px}
@@ -638,6 +639,10 @@ window.ReadInput = (function () {
 .ri-btn.g{background:transparent;color:var(--ri-ink);box-shadow:inset 0 0 0 2px var(--ri-line)}
 .ri-btn:disabled{opacity:.4;cursor:default}
 .ri-btn:focus-visible,.ri-x:focus-visible{outline:3px solid var(--ri-hi);outline-offset:2px}
+.ri-pair{display:inline-flex;align-items:center;gap:4px;margin-right:6px;font:14px "JetBrains Mono",Consolas,monospace}
+.ri-gridv{display:flex;flex-direction:column;gap:3px}
+.ri-gr{display:flex;gap:4px;align-items:center}
+.ri-gr.new .ri-box{box-shadow:0 0 0 2px var(--ri-hi)}
 @media (max-width:620px){.ri-panes{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){.ri-box,.ri-row{transition:none}.ri-machine.go{animation:none}}
 `;
@@ -646,28 +651,53 @@ window.ReadInput = (function () {
   const wait = (ms) => new Promise((r) => setTimeout(r, reduce ? 0 : ms));
   let styled = false;
 
+  const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; };
+  const toNums = (t) => String(t).trim().split(/\s+/).map((w) => (/^-?\d+$/.test(w) ? String(parseInt(w, 10)) : w));
+  const listRepr = (a) => "[" + a.join(", ") + "]";
+  // Старый вызов: open({ line, nLine, aName, nName }) → программа из двух строк: N = int(input()), A = list(map(int, input().split())).
+  function legacy(opts) {
+    const line = String((opts && opts.line) || "3 7 2 9 4").trim().replace(/\s+/g, " ");
+    const nLine = opts && opts.nLine != null && /^-?\d+$/.test(String(opts.nLine).trim()) ? String(opts.nLine).trim() : "";
+    const prog = [];
+    if (nLine) prog.push({ k: "int", name: (opts && opts.nName) || "n", text: nLine });
+    prog.push({ k: "list", name: (opts && opts.aName) || "a", text: line });
+    return prog;
+  }
+
+  // open({ prog: [...] }) — программа чтения ввода по строкам. Виды строк:
+  //   { k: "int", name, text }                 name = int(input())
+  //   { k: "list", name, text }                name = list(map(int, input().split()))
+  //   { k: "unpack", names, text }             a, b = map(int, input().split())
+  //   { k: "raw", code, set, say }             grid = []
+  //   { k: "loop", v, n, body, say }           for v in range(n): + тело (append или unpack), body.texts — строки входа по кругам
+  //   { k: "append", name, texts, unit }       name.append(list(map(int, input().split())))
   function open(opts) {
     if (!styled) { const st = document.createElement("style"); st.textContent = CSS; document.head.appendChild(st); styled = true; }
-    const line = String((opts && opts.line) || "3 7 2 9 4").trim().replace(/\s+/g, " ");
-    const words = line.split(" ");
-    const nums = words.map((w) => (/^-?\d+$/.test(w) ? String(parseInt(w, 10)) : w));
-    const nLine = opts && opts.nLine != null && /^-?\d+$/.test(String(opts.nLine).trim()) ? String(opts.nLine).trim() : "";
-    const A = (opts && opts.aName) || "a", N = (opts && opts.nName) || "n";
-
-    // Шаги отладчика. part — что подсвечено в строке кода; row — что появилось в «Вычисляем»; set — переменная после шага.
-    const steps = [];
-    if (nLine) {
-      steps.push({ ln: 0, part: "input", row: "nInput" });
-      steps.push({ ln: 0, part: "int", row: "nInt", set: [N, nLine, "int"] });
+    const prog = (opts && opts.prog) || legacy(opts);
+    const lines = [], steps = [], env = {};
+    let grp = 0;
+    const addLines = (s, indent) => { s.ln = lines.length; lines.push({ s, indent }); if (s.k === "loop") addLines(s.body, indent + 1); };
+    prog.forEach((s) => addLines(s, 0));
+    // Выполняем программу заранее и записываем шаги. Первый круг цикла — подробно, следующие — одним шагом.
+    function exec(s, text, fast) {
+      const g = ++grp, words = text != null ? String(text).trim().split(/\s+/) : [], nums = text != null ? toNums(text) : [];
+      const S = (o) => steps.push(Object.assign({ ln: s.ln, grp: g, stmt: s, text, words, nums }, o));
+      const read = () => { S({ part: "input", row: "input" }); S({ part: "split", row: "split" }); S({ part: "map", row: "map" }); };
+      if (s.k === "int") { S({ part: "input", row: "input" }); S({ part: "int", row: "int", set: [[s.name, nums[0], "int"]] }); }
+      else if (s.k === "list") { read(); S({ part: "list", row: "list", set: [[s.name, listRepr(nums), "list"]] }); }
+      else if (s.k === "unpack") { const set = s.names.map((nm, i) => [nm, nums[i], "int"]);
+        if (fast) S({ part: "all", row: "unpackFast", set }); else { read(); S({ part: "unpack", row: "unpack", set }); } }
+      else if (s.k === "append") { const arr = (env[s.name] = env[s.name] || []); arr.push(nums); const grid = arr.map((r) => r.slice());
+        const set = [[s.name, "[" + arr.map(listRepr).join(", ") + "]", "list"]];
+        if (fast) S({ part: "all", row: "appendFast", grid, set }); else { read(); S({ part: "list", row: "list" }); S({ part: "append", row: "append", grid, set }); } }
+      else if (s.k === "raw") { (s.set || []).forEach(([nm]) => { env[nm] = []; }); S({ part: "all", row: "raw", set: s.set }); }
+      else if (s.k === "loop") s.body.texts.forEach((t, it) => { S({ part: "all", row: "loop", it, set: [[s.v, String(it), "int"]] }); exec(s.body, t, it > 0); });
     }
-    steps.push({ ln: 1, part: "input", row: "input" });
-    steps.push({ ln: 1, part: "split", row: "split" });
-    steps.push({ ln: 1, part: "map", row: "map" });
-    steps.push({ ln: 1, part: "list", row: "list", set: [A, "[" + nums.join(", ") + "]", "list"] });
+    prog.forEach((s) => exec(s, s.text, false));
     let k = 0, run = 0;
 
     const ov = document.createElement("div"); ov.className = "ri-ov";
-    ov.innerHTML = `<div class="ri-card" role="dialog" aria-modal="true" aria-label="Как Python читает строку с числами">
+    ov.innerHTML = `<div class="ri-card" role="dialog" aria-modal="true" aria-label="Как Python читает ввод">
       <div class="ri-top"><h2>🐞 Debug: как читается ввод</h2><button class="ri-x" type="button" aria-label="Закрыть">✕</button></div>
       <div class="ri-code"></div>
       <div class="ri-panes"><div class="ri-pane"><h3>Вычисляем</h3><div class="ri-ev" aria-live="polite"></div></div>
@@ -692,50 +722,81 @@ window.ReadInput = (function () {
     function go(nk) { k = Math.max(0, Math.min(steps.length - 1, nk)); show(); }
 
     const P = (on, t) => `<span class="${on ? "hi" : ""}">${esc(t)}</span>`;
-    function codeHtml(st) {
-      const l0 = st.ln === 0, l1 = st.ln === 1, p = st.part;
-      const lines = [];
-      if (nLine) lines.push(`<div class="ri-ln ${l0 ? "cur" : "done"}"><b>${l0 ? "▶" : ""}</b><span>${esc(N)} = ${P(l0 && p === "int", "int(")}${P(l0, "input()")}${P(l0 && p === "int", ")")}</span></div>`);
-      lines.push(`<div class="ri-ln ${l1 ? "cur" : ""}"><b>${l1 ? "▶" : ""}</b><span>${esc(A)} = ${P(l1 && p === "list", "list(")}${P(l1 && p === "map", "map(int, ")}${P(l1 && p === "input", "input()")}${P(l1 && p === "split", ".split()")}${P(l1 && p === "map", ")")}${P(l1 && p === "list", ")")}</span></div>`);
-      return lines.join("");
+    function lineHtml(L, st) {
+      const s = L.s, cur = st.ln === s.ln, p = cur ? st.part : "", all = p === "all";
+      const on = (...parts) => cur && (all || parts.includes(p));
+      const READ = () => `${P(on("map"), "map(int, ")}${P(on("input"), "input()")}${P(on("split"), ".split()")}${P(on("map"), ")")}`;
+      let code = "";
+      if (s.k === "int") code = `${esc(s.name)} = ${P(on("int"), "int(")}${P(on("input", "int"), "input()")}${P(on("int"), ")")}`;
+      else if (s.k === "list") code = `${esc(s.name)} = ${P(on("list"), "list(")}${READ()}${P(on("list"), ")")}`;
+      else if (s.k === "unpack") code = `${P(on("unpack"), s.names.join(", "))} = ${READ()}`;
+      else if (s.k === "append") code = `${P(on("append"), s.name + ".append(")}${P(on("list"), "list(")}${READ()}${P(on("list"), ")")}${P(on("append"), ")")}`;
+      else if (s.k === "raw") code = P(on(), s.code);
+      else if (s.k === "loop") code = P(on(), `for ${s.v} in range(${s.n}):`);
+      const seen = steps.slice(0, k).some((x) => x.ln === s.ln);
+      return `<div class="ri-ln ${cur ? "cur" : seen ? "done" : ""}"><b>${cur ? "▶" : ""}</b><span>${"    ".repeat(L.indent)}${code}</span></div>`;
     }
-    const chars = (s) => `<span class="ri-str"><span class="ri-q">"</span><span class="ri-chars">${[...s].map((c) => c === " " ? '<span class="ri-ch sp" title="пробел">␣</span>' : `<span class="ri-ch">${esc(c)}</span>`).join("")}</span><span class="ri-q">"</span></span>`;
+    const tag = (t) => `<span class="ri-tag">${esc(t)}</span>`;
+    const chars = (s) => `<span class="ri-str"><span class="ri-q">"</span><span class="ri-chars">${[...String(s)].map((c) => c === " " ? '<span class="ri-ch sp" title="пробел">␣</span>' : `<span class="ri-ch">${esc(c)}</span>`).join("")}</span><span class="ri-q">"</span></span>`;
     const boxes = (arr, cls, quote, shown) => arr.map((w) => `<span class="ri-box ${cls}${shown ? " in" : ""}">${quote ? "'" + esc(w) + "'" : esc(w)}</span>`).join("");
-    const row = (expr, val, tag, id) => `<span class="ri-expr ri-row" data-r="${id}">${expr} →</span><span class="ri-to ri-row" data-r="${id}">→</span><span class="ri-val ri-row" data-r="${id}">${val} ${tag}</span>`;
+    const row = (expr, val, tg, id) => `<span class="ri-expr ri-row" data-r="${id}">${esc(expr)} →</span><span class="ri-to ri-row" data-r="${id}">→</span><span class="ri-val ri-row" data-r="${id}">${val} ${tg}</span>`;
+    const pairs = (s) => s.stmt.names.map((nm, i) => `<span class="ri-pair"><b>${esc(nm)}</b> = <span class="ri-box n in">${esc(s.nums[i])}</span></span>`).join("");
+    const pairsText = (s) => s.stmt.names.map((nm, i) => `${esc(nm)} = ${esc(s.nums[i])}`).join(", ");
+    const gridv = (s) => `<span class="ri-gridv">${s.grid.map((r, i) => `<span class="ri-gr${i === s.grid.length - 1 ? " new" : ""}"><span class="ri-br">[</span>${boxes(r, "n", false, true)}<span class="ri-br">]</span></span>`).join("")}</span>`;
+    const READX = "map(int, input().split())";
     const ROWS = {
-      nInput: () => row("input()", chars(nLine), '<span class="ri-tag">str</span>', "nInput"),
-      nInt: () => row("int(input())", `<span class="ri-box n in">${esc(nLine)}</span>`, '<span class="ri-tag">int</span>', "nInt"),
-      input: () => row("input()", chars(line), '<span class="ri-tag">str</span>', "input"),
-      split: (live) => row("input().split()", `<span class="ri-br">[</span>${boxes(words, "s", true, !live)}<span class="ri-br">]</span>`, '<span class="ri-tag">list из str</span>', "split"),
-      map: (live) => row("map(int, input().split())", `<span class="ri-mq">${live ? boxes(words, "s", true, true) : ""}</span><span class="ri-machine">int</span><span class="ri-mo">${live ? "" : boxes(nums, "n", false, true)}</span>`, '<span class="ri-tag">map</span>', "map"),
-      list: (live) => row("list(map(int, input().split()))", `<span class="ri-br">[</span>${boxes(nums, "n", false, !live)}<span class="ri-br">]</span>`, '<span class="ri-tag">list из int</span>', "list"),
+      input: (s) => row("input()", chars(s.text), tag("str"), "input"),
+      int: (s) => row("int(input())", `<span class="ri-box n in">${esc(s.nums[0])}</span>`, tag("int"), "int"),
+      split: (s, live) => row("input().split()", `<span class="ri-br">[</span>${boxes(s.words, "s", true, !live)}<span class="ri-br">]</span>`, tag("list из str"), "split"),
+      map: (s, live) => row(READX, `<span class="ri-mq">${live ? boxes(s.words, "s", true, true) : ""}</span><span class="ri-machine">int</span><span class="ri-mo">${live ? "" : boxes(s.nums, "n", false, true)}</span>`, tag("map"), "map"),
+      list: (s, live) => row(`list(${READX})`, `<span class="ri-br">[</span>${boxes(s.nums, "n", false, !live)}<span class="ri-br">]</span>`, tag("list из int"), "list"),
+      unpack: (s) => row(`${s.stmt.names.join(", ")} = ${READX}`, pairs(s), tag("распаковка"), "unpack"),
+      unpackFast: (s) => row(`${s.stmt.names.join(", ")} = ${READX}`, `${chars(s.text)}<span class="ri-br">→</span>${pairs(s)}`, tag("новая строка"), "unpackFast"),
+      append: (s) => row(`${s.stmt.name}.append(…)`, gridv(s), tag("список списков"), "append"),
+      appendFast: (s) => row(`${s.stmt.name}.append(list(${READX}))`, `${chars(s.text)}<span class="ri-br">→</span>${gridv(s)}`, tag("новая строка"), "appendFast"),
+      raw: (s) => row(s.stmt.code, s.set ? esc(s.set[0][1]) : "", s.set ? tag(s.set[0][2]) : "", "raw"),
+      loop: (s) => row(`for ${s.stmt.v} in range(${s.stmt.n})`, `<span class="ri-pair"><b>${esc(s.stmt.v)}</b> = <span class="ri-box n in">${s.it}</span></span>`, tag(`круг ${s.it + 1} из ${s.stmt.body.texts.length}`), "loop"),
     };
     // Главная мысль шага — крупно; дополнительное — мелко под ней.
-    const sum = nums.every((x) => /^-?\d+$/.test(x)) ? nums.reduce((a, b) => a + +b, 0) : null;
+    const unit = (s, n) => { const u = s.stmt.unit || ["строка", "строки", "строк"]; return n + " " + plural(n, u[0], u[1], u[2]); };
     const SAY = {
-      nInput: [`Это текст "${esc(nLine)}", а не число`, `С текстом не посчитать: <code>"${esc(nLine)}" + "1"</code> даст <code>"${esc(nLine)}1"</code>.`],
-      nInt: [`Теперь это число ${esc(nLine)} — с ним можно считать`, `<code>int(…)</code> превращает текст в целое число. Оно сохраняется в <code>${esc(N)}</code>.`],
-      input: ["Вся строка — один текст, вместе с пробелами", `С текстом не посчитать: <code>"3" + "7"</code> даст <code>"37"</code>, а не 10.`],
-      split: [`Разрезали по пробелам: ${words.length} слов, но это всё ещё текст`, "Кавычки на месте — значит, это строки, не числа."],
-      map: ["Каждое слово превращается в число", `<code>map</code> — ещё не список, а конвейер: у него нельзя спросить <code>[0]</code> или <code>len</code>.`],
-      list: [`Готово: ${esc(A)} — список чисел`, `<code>${esc(A)}[0]</code> = ${esc(nums[0])}${sum !== null ? `, <code>sum(${esc(A)})</code> = ${sum}` : ""}. Можно перебирать циклом и брать срезы.`],
+      input: (s) => s.stmt.k === "int"
+        ? [`Это текст "${esc(s.text)}", а не число`, `С текстом не посчитать: <code>"${esc(s.text)}" + "1"</code> даст <code>"${esc(s.text)}1"</code>.`]
+        : ["Вся строка — один текст, вместе с пробелами", `С текстом не посчитать: <code>"3" + "7"</code> даст <code>"37"</code>, а не 10.`],
+      int: (s) => [`Теперь это число ${esc(s.nums[0])} — с ним можно считать`, `<code>int(…)</code> превращает текст в целое число. Оно сохраняется в <code>${esc(s.stmt.name)}</code>.`],
+      split: (s) => [`Разрезали по пробелам: ${s.words.length} ${plural(s.words.length, "слово", "слова", "слов")}, но это всё ещё текст`, "Кавычки на месте — значит, это строки, не числа."],
+      map: () => ["Каждое слово превращается в число", `<code>map</code> — ещё не список, а конвейер: у него нельзя спросить <code>[0]</code> или <code>len</code>.`],
+      list: (s) => {
+        if (s.stmt.k === "append") return ["Строка стала списком чисел", `Осталось положить его в <code>${esc(s.stmt.name)}</code>.`];
+        const A = esc(s.stmt.name), sum = s.nums.every((x) => /^-?\d+$/.test(x)) ? s.nums.reduce((a, b) => a + +b, 0) : null;
+        return [`Готово: ${A} — список чисел`, `<code>${A}[0]</code> = ${esc(s.nums[0])}${sum !== null ? `, <code>sum(${A})</code> = ${sum}` : ""}. Можно перебирать циклом и брать срезы.`];
+      },
+      unpack: (s) => [`Числа разложились по переменным: ${pairsText(s)}`, "Слева столько имён, сколько чисел в строке, — каждое число ложится в своё имя. Если чисел окажется больше или меньше, Python выдаст ошибку."],
+      unpackFast: (s) => [`Новая строка: ${pairsText(s)}`, `Новый круг цикла читает следующую строку входа. Старые значения ${esc(s.stmt.names.join(", "))} заменяются новыми.`],
+      append: (s) => [`В ${esc(s.stmt.name)} теперь ${unit(s, s.grid.length)}`, `${esc(s.stmt.name)} — список списков: <code>${esc(s.stmt.name)}[0]</code> — первая ${esc((s.stmt.unit || ["строка"])[0])}, <code>${esc(s.stmt.name)}[0][0]</code> — её первое число.`],
+      appendFast: (s) => [`Ещё одна строка — в ${esc(s.stmt.name)} уже ${unit(s, s.grid.length)}`, `Каждый круг цикла читает следующую строку входа и кладёт её в конец <code>${esc(s.stmt.name)}</code>.`],
+      raw: (s) => s.stmt.say || ["Простая строка кода", ""],
+      loop: (s) => { const n = s.stmt.body.texts.length;
+        return [`Круг ${s.it + 1} из ${n}: ${esc(s.stmt.v)} = ${s.it}`, s.stmt.say || `Строка внутри цикла выполнится ${n} ${plural(n, "раз", "раза", "раз")} — и каждый раз прочитает новую строку входа.`]; },
     };
 
     async function show() {
       const my = ++run, st = steps[k];
-      $(".ri-code").innerHTML = codeHtml(st);
+      $(".ri-code").innerHTML = lines.map((L) => lineHtml(L, st)).join("");
       $(".ri-count").textContent = `Шаг ${k + 1} из ${steps.length}`;
       $("[data-b]").disabled = k === 0;
       $("[data-f]").textContent = k === steps.length - 1 ? "Готово ✓" : "Шаг ▶";
-      // «Вычисляем»: шаги текущей строки кода; последний — живой, с анимацией
-      const sameLine = steps.slice(0, k + 1).filter((s) => s.ln === st.ln);
-      $(".ri-ev").innerHTML = sameLine.map((s, i) => ROWS[s.row](i === sameLine.length - 1)).join("");
-      $(".ri-say").innerHTML = `<b>${SAY[st.row][0]}</b><small>${SAY[st.row][1]}</small>`;
+      // «Вычисляем»: шаги текущей строки кода (в этом круге цикла); последний — живой, с анимацией
+      const same = steps.slice(0, k + 1).filter((s) => s.grp === st.grp);
+      $(".ri-ev").innerHTML = same.map((s, i) => ROWS[s.row](s, i === same.length - 1)).join("");
+      const say = SAY[st.row](st);
+      $(".ri-say").innerHTML = `<b>${say[0]}</b>${say[1] ? `<small>${say[1]}</small>` : ""}`;
       ov.querySelectorAll(".ri-row").forEach((el) => { if (el.dataset.r !== st.row) el.classList.add("in"); });
-      // «Переменные»: всё, что присвоено к этому шагу; новое подсвечено
-      const vars = steps.slice(0, k + 1).filter((s) => s.set);
-      $(".ri-vars").innerHTML = vars.length
-        ? vars.map((s) => `<div class="ri-var${s === st ? " new" : ""}"><b>${esc(s.set[0])}</b> = <span>${esc(s.set[1])}</span><i>${s.set[2]}</i></div>`).join("")
+      // «Переменные»: последнее значение каждой; то, что поменялось на этом шаге, подсвечено
+      const vm = new Map();
+      steps.slice(0, k + 1).forEach((s) => (s.set || []).forEach(([n, v, t]) => vm.set(n, [v, t, s === st])));
+      $(".ri-vars").innerHTML = vm.size
+        ? [...vm].map(([n, [v, t, isNew]]) => `<div class="ri-var${isNew ? " new" : ""}"><b>${esc(n)}</b> = <span>${esc(v)}</span><i>${t}</i></div>`).join("")
         : '<span class="ri-empty">пока пусто — присваивание в конце строки</span>';
       await wait(30); if (my !== run) return;
       ov.querySelectorAll(`.ri-row[data-r="${st.row}"]`).forEach((el) => el.classList.add("in"));
@@ -745,12 +806,12 @@ window.ReadInput = (function () {
       if (st.row === "map") {
         const q = ov.querySelector(".ri-mq"), out = ov.querySelector(".ri-mo"), m = ov.querySelector(".ri-machine");
         await wait(300);
-        for (let i = 0; i < nums.length; i++) {
+        for (let i = 0; i < st.nums.length; i++) {
           if (my !== run) return;
           const w = q.firstElementChild; if (w) { w.classList.remove("in"); await wait(160); w.remove(); }
           m.classList.remove("go"); void m.offsetWidth; m.classList.add("go");
           await wait(220); if (my !== run) return;
-          out.insertAdjacentHTML("beforeend", `<span class="ri-box n">${esc(nums[i])}</span>`);
+          out.insertAdjacentHTML("beforeend", `<span class="ri-box n">${esc(st.nums[i])}</span>`);
           const b = out.lastElementChild; void b.offsetWidth; b.classList.add("in");
           await wait(160);
         }
@@ -792,6 +853,7 @@ window.ReadInput = (function () {
       day: () => ({ a: Array.from({ length: rint(8, 16) }, () => rint(0, 25)) }),
       input: (d) => `${d.a.length}\n${d.a.join(" ")}\n`, answer: (d) => pre(d.a).slice(1).join(" ") },
     { title: "Смена Лёни", layer: "Пепперони", coins: 30, noSum: true,
+      ri: (d) => ({ prog: [{ k: "int", name: "hours", text: String(d.a.length) }, { k: "list", name: "pizzas", text: d.a.join(" ") }, { k: "unpack", names: ["start", "end"], text: `${d.l} ${d.r}` }] }),
       story: "Повар Лёня работал с часа <b>L</b> по час <b>R</b> включительно. Хозяйка платит ему по пиццакоину за пиццу. Сколько пицц он испёк за смену? Часы нумеруются с единицы.",
       inLines: ["В первой строке — число N (1 ≤ N ≤ 24): сколько часов работала пиццерия.", "Во второй строке — N целых чисел от 0 до 100 через пробел: сколько пицц испекли в каждый час.", "В третьей строке — два числа L и R (1 ≤ L ≤ R ≤ N): первый и последний час смены Лёни. Часы нумеруются с единицы."], outp: "Выведите одно число — сколько пицц испекли с часа L по час R включительно.", explain: "Смена — часы 2, 3 и 4: 7 + 2 + 9 = 18.", tl: 3, readMap: [["2 4", "start, end = map(int, input().split())"]], readNote: "Первые две строки ты уже читать умеешь. Новая — третья:",
       sample: { a: [3, 7, 2, 9, 4], l: 2, r: 4 }, starter: READ + "# прочитай третью строку: L и R — начало и конец смены (start, end)\n# выведи, сколько пицц испекли с часа L по час R\n", help: "дана только лента, остальное — твоё",
@@ -829,17 +891,25 @@ window.ReadInput = (function () {
   const READ_G = "rows, cols = map(int, input().split())\ngrid = []\nfor r in range(rows):\n    grid.append(list(map(int, input().split())))\n";
   const READ_GC = "rows, cols = map(int, input().split())        # 1-я строка: сколько улиц и сколько кварталов на улице\ngrid = []                                     # карта: список улиц, каждая улица — список чисел\nfor r in range(rows):                         # дальше rows строк — по улице в строке\n    grid.append(list(map(int, input().split())))\n";
   const G_SAMPLE = [[3, 1, 4], [1, 5, 9], [2, 6, 5]];
+  const G_MAP = [["3 3", "rows, cols = map(int, input().split())"], ["3 1 4", "grid.append(list(map(int, input().split())))"], ["1 5 9", "grid.append(…) — то же самое в цикле for"], ["2 6 5", "grid.append(…) — и так rows раз"]];
+  // 🐞 Debug «как читается ввод» для карты: rows, cols → пустая карта → улицы по одной в цикле
+  const riGrid = (d, extra = []) => ({ prog: [
+    { k: "unpack", names: ["rows", "cols"], text: `${d.g.length} ${d.g[0].length}` },
+    { k: "raw", code: "grid = []", set: [["grid", "[]", "list"]], say: ["Пустой список — сюда сложим улицы", "Пока в карте нет ни одной улицы. Каждый круг цикла добавит одну."] },
+    { k: "loop", v: "r", n: "rows", say: "Строка внутри цикла выполнится столько раз, сколько улиц, — и каждый раз прочитает следующую улицу.",
+      body: { k: "append", name: "grid", unit: ["улица", "улицы", "улиц"], texts: d.g.map((r) => r.join(" ")) } },
+    ...extra] });
   const G_IN = ["В первой строке — два числа R и C (1 ≤ R, C ≤ 10): сколько улиц на карте и сколько кварталов на каждой улице.", "Дальше R строк, в каждой C целых чисел от 0 до 50 через пробел: сколько пицц заказал каждый квартал этой улицы."];
   const S2 = [
     { title: "Карта города", layer: "Цифры на карте", coins: 20,
       story: "Курьеры принесли карту города. Город — это таблица: улицы идут сверху вниз, кварталы на улице — слева направо. В каждой клетке записано, сколько пицц заказал этот квартал. Сколько пицц заказал <b>весь город</b>?",
       inLines: G_IN, outp: "Выведите одно число — сколько пицц заказал весь город.", explain: "Улица 1: 3 + 1 + 4 = 8. Улица 2: 1 + 5 + 9 = 15. Улица 3: 2 + 6 + 5 = 13. Весь город: 8 + 15 + 13 = 36.", tl: 3,
-      readMap: [["3 3", "rows, cols = map(int, input().split())"], ["3 1 4", "grid.append(list(map(int, input().split())))"], ["1 5 9", "grid.append(…) — то же самое в цикле for"], ["2 6 5", "grid.append(…) — и так rows раз"]],
+      readMap: G_MAP, ri: (d) => riGrid(d),
       readNote: "Каждая строка входа — одна улица. Она становится списком, а вся карта — списком списков: grid[0] — первая улица, grid[0][2] — её третий квартал.",
       sample: { g: G_SAMPLE }, starter: READ_GC + "\ntotal = 0                 # копилка: пиццы всего города\nfor street in grid:       # street — одна улица: список чисел\n    for block in street:  # block — один квартал этой улицы\n        total = ...\nprint(total)\n", help: "код почти готов, допиши одно место",
       tip: "Цикл в цикле: внешний перебирает улицы, внутренний — кварталы на улице. В копилку total прибавляй block, как в первой серии.",
       viz: (d) => gridViz(d), day: () => ({ g: grid(rint(3, 6), rint(3, 7), 20) }), input: (d) => gridIn(d.g), answer: (d) => String(d.g.flat().reduce((s, x) => s + x, 0)) },
-    { title: "Улицы", layer: "Итоги улиц", coins: 30,
+    { title: "Улицы", layer: "Итоги улиц", coins: 30, readMap: G_MAP, readNote: "Карта читается так же, как в первом заказе.", ri: (d) => riGrid(d),
       story: "Курьеров раздают по улицам: сколько пицц заказала улица, столько поездок туда и будет. Для <b>каждой улицы</b> выведи, сколько пицц она заказала.",
       inLines: G_IN, outp: "Выведите R чисел через пробел — сколько пицц заказала 1-я, 2-я, …, R-я улица.", explain: "Улица 1: 3 + 1 + 4 = 8. Улица 2: 1 + 5 + 9 = 15. Улица 3: 2 + 6 + 5 = 13.", tl: 3,
       sample: { g: G_SAMPLE }, starter: READ_GC + "\nstreets = []   # сколько пицц заказала каждая улица\n# твой цикл: для каждой улицы посчитай её пиццы и положи в streets\n\nprint(*streets)\n", help: "цикл пишешь сама",
@@ -849,13 +919,13 @@ window.ReadInput = (function () {
       story: "Новый курьер возит пиццу в один район — прямоугольник на карте: улицы с <b>r1</b> по <b>r2</b>, кварталы с <b>c1</b> по <b>c2</b> включительно. Сколько пицц заказал этот район? Улицы и кварталы нумеруются с единицы.",
       inLines: ["В первой строке — два числа R и C (1 ≤ R, C ≤ 10).", "Дальше R строк по C чисел от 0 до 50 — карта.", "В последней строке — четыре числа r1 c1 r2 c2 (1 ≤ r1 ≤ r2 ≤ R, 1 ≤ c1 ≤ c2 ≤ C): левый верхний и правый нижний угол района."],
       outp: "Выведите одно число — сколько пицц заказал район.", explain: "Улицы 2–3, кварталы 2–3: 5 + 9 + 6 + 5 = 25.", tl: 3,
-      readMap: [["2 2 3 3", "r1, c1, r2, c2 = map(int, input().split())"]], readNote: "Карту ты уже читать умеешь. Новая — последняя строка:",
+      readMap: [["2 2 3 3", "r1, c1, r2, c2 = map(int, input().split())"]], readNote: "Карту ты уже читать умеешь. Новая — последняя строка:", ri: (d) => riGrid(d, [{ k: "unpack", names: ["r1", "c1", "r2", "c2"], text: d.q.join(" ") }]),
       sample: { g: G_SAMPLE, q: [2, 2, 3, 3] }, starter: READ_G + "# прочитай последнюю строку: r1, c1, r2, c2\n# выведи, сколько пицц заказали в районе\n", help: "дана только карта, остальное — твоё",
       tip: "Улицы с r1 по r2 — это for r in range(r1 - 1, r2). На каждой такой улице кварталы с c1 по c2 — срез grid[r][c1 - 1:c2].",
       viz: (d) => gridViz(d, (k) => { const C = d.g[0].length, r = Math.floor(k / C) + 1, c = k % C + 1; return r >= d.q[0] && r <= d.q[2] && c >= d.q[1] && c <= d.q[3]; }),
       day: () => { const R = rint(3, 7), C = rint(3, 7); return { g: grid(R, C, 20), q: randRect(R, C) }; },
       input: (d) => gridIn(d.g) + d.q.join(" ") + "\n", answer: (d) => String(rect(d.g, d.q)) },
-    { title: "Табло-карта", layer: "Двумерное табло", coins: 50,
+    { title: "Табло-карта", layer: "Двумерное табло", coins: 50, readMap: G_MAP, readNote: "Карта читается так же, как в первом заказе.", ri: (d) => riGrid(d),
       story: "В штабе повесили табло-карту такого же размера, как город. В клетке (r, c) табло показывает, сколько пицц заказали все кварталы <b>от левого верхнего угла карты до этой клетки</b>: улицы с 1-й по r-ю, кварталы с 1-го по c-й. Выведи всё табло.",
       inLines: G_IN, outp: "Выведите R строк по C чисел через пробел — табло-карту.",
       explain: "Клетка (2, 2): 3 + 1 + 1 + 5 = 10. Её можно собрать из соседей на табло: сверху 4, слева 4, а угол 3 попал в оба — 4 + 4 − 3 + 5 = 10.", tl: 3,
@@ -864,6 +934,9 @@ window.ReadInput = (function () {
       viz: (d) => gridViz(d), day: () => ({ g: grid(rint(2, 6), rint(2, 7), 20) }), input: (d) => gridIn(d.g),
       answer: (d) => pre2(d.g).slice(1).map((r) => r.slice(1).join(" ")).join("\n") },
     { title: "Босс: миллион вопросов", layer: "Город накормлен", coins: 120, boss: true,
+      readMap: [["3 3", "rows, cols = map(int, input().split())"], ["3 1 4 …", "карта — как в первых заказах"], ["3", "questions = int(input())"], ["1 1 3 3", "r1, c1, r2, c2 = map(int, input().split()) — в цикле, questions раз"]],
+      readNote: "Новое — вопросы после карты:",
+      ri: (d) => riGrid(d, [{ k: "int", name: "questions", text: String(d.qs.length) }, { k: "loop", v: "i", n: "questions", body: { k: "unpack", names: ["r1", "c1", "r2", "c2"], texts: d.qs.map((q) => q.join(" ")) } }]),
       story: "Звонят из всех районов сразу: <b>Q</b> вопросов «сколько пицц в районе r1 c1 r2 c2?». А карта огромная — 1000 улиц по 100 кварталов. Если для каждого вопроса складывать район заново, город останется голодным. Построй табло-карту один раз — и отвечай на каждый вопрос четырьмя числами с табло.",
       inLines: ["В первой строке — два числа R и C (1 ≤ R ≤ 1000, 1 ≤ C ≤ 100).", "Дальше R строк по C чисел от 0 до 9 — карта.", "Затем число Q (1 ≤ Q ≤ 50 000) — сколько вопросов.", "Дальше Q строк по четыре числа r1 c1 r2 c2 — районы."],
       outp: "Выведите Q строк: ответ на каждый вопрос.",
@@ -889,17 +962,22 @@ window.ReadInput = (function () {
   const roadViz = (d) => ({ kind: "tape", values: roadOf(d.n, d.sh), meter: (s, x) => `Сейчас на дороге: <b>${x}</b>`, total: () => "Смена закончилась — все скутеры в гараже." });
   function promoted(d) { const m = new Array(d.a.length + 1).fill(0); d.pr.forEach(([l, r, x]) => { m[l - 1] += x; m[r] -= x; }); let add = 0; return d.a.map((v, h) => v + (add += m[h])); }
   const SH_SAMPLE = { n: 6, sh: [[1, 3], [2, 5], [5, 6]] };
+  const SH_MAP = [["6 3", "hours, couriers = map(int, input().split())"], ["1 3", "start, end = map(int, input().split()) — в цикле, couriers раз"]];
+  const riShifts = (d) => ({ prog: [{ k: "unpack", names: ["hours", "couriers"], text: `${d.n} ${d.sh.length}` },
+    { k: "loop", v: "i", n: "couriers", body: { k: "unpack", names: ["start", "end"], texts: d.sh.map((x) => x.join(" ")) } }] });
   const SH_IN = ["В первой строке — два числа N и K (1 ≤ N ≤ 24, 1 ≤ K ≤ 10): сколько часов работает доставка и сколько курьеров.", "Дальше K строк по два числа L и R (1 ≤ L ≤ R ≤ N): первый и последний час смены курьера."];
   const S3 = [
     { title: "Курьеры на смене", layer: "Первые скутеры", coins: 30,
       story: "Хозяйка купила скутеры! Курьер выходит в начале часа <b>L</b> и возвращается в конце часа <b>R</b> — он на дороге во все часы с L по R включительно. Диспетчеру нужно табло: сколько курьеров на дороге <b>в каждый час</b>.",
       inLines: SH_IN, outp: "Выведите N чисел через пробел — сколько курьеров на дороге в 1-й, 2-й, …, N-й час.",
       explain: "Смены 1–3, 2–5 и 5–6. Во 2-й час на дороге первый и второй курьер — 2. В 4-й только второй — 1.", tl: 3,
-      readMap: [["6 3", "hours, couriers = map(int, input().split())"], ["1 3", "start, end = map(int, input().split()) — в цикле, couriers раз"]],
+      readMap: SH_MAP, ri: riShifts,
       sample: SH_SAMPLE, starter: "hours, couriers = map(int, input().split())\nroad = [0] * hours    # road[h] — сколько курьеров на дороге в час h + 1\nfor i in range(couriers):\n    start, end = map(int, input().split())\n    # отметь этого курьера во всех часах его смены\n\nprint(*road)\n", help: "цикл по смене пишешь сама",
       tip: "Часы с start по end — это road[start - 1] … road[end - 1], то есть for hour in range(start - 1, end): road[hour] += 1.",
       viz: roadViz, day: shiftsDay, input: shiftsIn, answer: (d) => roadOf(d.n, d.sh).join(" ") },
     { title: "Табло наоборот", layer: "Табло наоборот", coins: 30,
+      readMap: [["5", "hours = int(input())"], ["3 10 12 21 25", "board = list(map(int, input().split()))"]],
+      ri: (d) => ({ prog: [{ k: "int", name: "hours", text: String(d.a.length) }, { k: "list", name: "board", text: pre(d.a).slice(1).join(" ") }] }),
       story: "Ночью табло на печи сломалось и заработало наоборот: от ленты остались только показания табло — сколько пицц испекли <b>с утра</b> после каждого часа. А хозяйке нужна лента: сколько пицц испекли <b>в каждый час</b>. Восстанови её.",
       inLines: ["В первой строке — число N (1 ≤ N ≤ 24).", "Во второй строке — N чисел: показания табло после 1-го, 2-го, …, N-го часа."],
       outp: "Выведите N чисел через пробел — сколько пицц испекли в каждый час.",
@@ -907,7 +985,7 @@ window.ReadInput = (function () {
       sample: { a: [3, 7, 2, 9, 4] }, starter: "hours = int(input())\nboard = list(map(int, input().split()))   # показания табло\npizzas = []                               # лента: пиццы за каждый час\n# пиццы за час = табло сейчас − табло час назад (а до первого часа табло показывало 0)\n\nprint(*pizzas)\n", help: "цикл пишешь сама",
       tip: "Запоминай, что табло показывало час назад: before = 0, а в цикле pizzas.append(x - before) и before = x. Табло складывает — а здесь вычитаем: это действие наоборот.",
       day: () => ({ a: Array.from({ length: rint(8, 16) }, () => rint(0, 25)) }), input: (d) => `${d.a.length}\n${pre(d.a).slice(1).join(" ")}\n`, answer: (d) => d.a.join(" ") },
-    { title: "Метки на ленте", layer: "Метки +1 и −1", coins: 40,
+    { title: "Метки на ленте", layer: "Метки +1 и −1", coins: 40, readMap: SH_MAP, readNote: "Вход — как в первом заказе.", ri: riShifts,
       story: "Диспетчер придумал хитрость: не отмечать курьера во всех часах смены, а поставить всего <b>две метки</b>. В час, когда курьер выходит, — <b>+1</b>. В час сразу после его смены — <b>−1</b>. Если смена кончилась в последний час, вторую метку ставить некуда. Меток в одном часе может быть несколько — они складываются. Выведи сумму меток в каждом часе.",
       inLines: SH_IN, outp: "Выведите N чисел через пробел — сумму меток в 1-м, 2-м, …, N-м часу.",
       explain: "Смена 1–3: +1 в час 1, −1 в час 4. Смена 2–5: +1 в час 2, −1 в час 6. Смена 5–6: +1 в час 5, а часа после 6-го нет. Теперь сложи метки с утра: 1, 2, 2, 1, 2, 1 — это табло курьеров из первого заказа!", tl: 3,
@@ -915,7 +993,7 @@ window.ReadInput = (function () {
       tip: "Час start — это marks[start - 1], а час end + 1 — это marks[end]. Значит: marks[start - 1] += 1 и marks[end] -= 1. Лишняя клетка в конце ловит метки после последнего часа.",
       viz: (d) => ({ kind: "tape", values: marksOf(d.n, d.sh), meter: (s) => `Сумма меток с утра: <b>${s}</b> — столько курьеров на дороге` }),
       day: shiftsDay, input: shiftsIn, answer: (d) => marksOf(d.n, d.sh).join(" ") },
-    { title: "Час пик", layer: "Час пик", coins: 60, big: true,
+    { title: "Час пик", layer: "Час пик", coins: 60, big: true, readMap: SH_MAP, readNote: "Вход — как в первом заказе, только смен очень много.", ri: riShifts,
       story: "Доставка работает круглосуточно уже 50 000 часов, курьеров — 50 000. Когда на дороге <b>больше всего</b> курьеров? Отмечать каждого курьера во всех часах смены — слишком долго: скутеры вернутся раньше, чем программа досчитает. Метки и табло — быстро.",
       inLines: ["В первой строке — два числа N и K (1 ≤ N, K ≤ 50 000).", "Дальше K строк по два числа L и R (1 ≤ L ≤ R ≤ N): первый и последний час смены курьера."],
       outp: "Выведите два числа через пробел: сколько курьеров было на дороге в самый загруженный час и номер первого такого часа.",
@@ -927,6 +1005,10 @@ window.ReadInput = (function () {
       viz: roadViz, day: (big) => { const n = big ? 50000 : rint(8, 16); return { n, sh: shiftsOf(n, big ? 50000 : rint(2, 7), n), big }; }, input: shiftsIn,
       answer: (d) => { let best = -1, at = 0; roadOf(d.n, d.sh).forEach((x, h) => { if (x > best) { best = x; at = h + 1; } }); return best + " " + at; } },
     { title: "Босс: акции по всей сети", layer: "Всё доставлено", coins: 150, boss: true,
+      readMap: [["5 2 2", "hours, promos, questions = map(int, input().split())"], ["3 7 2 9 4", "pizzas = list(map(int, input().split()))"], ["2 4 1", "start, end, extra = map(int, input().split()) — в цикле, promos раз"], ["1 5", "a, b = map(int, input().split()) — в цикле, questions раз"]],
+      ri: (d) => ({ prog: [{ k: "unpack", names: ["hours", "promos", "questions"], text: `${d.a.length} ${d.pr.length} ${d.qs.length}` }, { k: "list", name: "pizzas", text: d.a.join(" ") },
+        { k: "loop", v: "i", n: "promos", body: { k: "unpack", names: ["start", "end", "extra"], texts: d.pr.map((x) => x.join(" ")) } },
+        { k: "loop", v: "i", n: "questions", body: { k: "unpack", names: ["a", "b"], texts: d.qs.map((x) => x.join(" ")) } }] }),
       story: "Финал сезона! Лента пиццерии — <b>N</b> часов. Хозяйка запустила <b>K</b> акций: «с часа L по час R каждый час пеките на X пицц больше». А потом бухгалтер задал <b>Q</b> вопросов: сколько пицц испекли с часа A по час B — уже с акциями? Нужны обе суперсилы: метки для акций и табло для вопросов.",
       inLines: ["В первой строке — три числа N, K и Q (1 ≤ N, K, Q ≤ 30 000).", "Во второй строке — N чисел от 0 до 60: сколько пицц пекли в каждый час до акций.", "Дальше K строк по три числа L R X (1 ≤ L ≤ R ≤ N, 1 ≤ X ≤ 9): акция.", "Дальше Q строк по два числа A B (1 ≤ A ≤ B ≤ N): вопрос бухгалтера."],
       outp: "Выведите Q строк — ответ на каждый вопрос с учётом всех акций.",
@@ -1162,7 +1244,7 @@ window.ReadInput = (function () {
         <section><h3>Выходные данные</h3><p>${esc(o.outp)}</p></section>
         <section><h3>Пример</h3><div class="ex-wrap"><table class="ex"><tr><th>Ввод</th><th>Вывод</th></tr><tr><td><pre>${esc(sIn.trimEnd())}</pre></td><td><pre>${esc(sOut)}</pre></td></tr></table></div>
           <p class="expl"><b>Пояснение.</b> ${esc(o.explain)}</p><p class="tl">Ограничение времени: ${o.tl} с.</p></section>
-        ${o.readMap ? `<section class="readmap"><h3>Как прочитать вход ${o.sample.a ? '<button class="ri-i" type="button" data-ri title="Выполнение по шагам: input → split → map → list">🐞 Debug</button>' : ""}</h3>${o.readNote ? `<p>${esc(o.readNote)}</p>` : ""}${o.readMap.map(([line, py]) => `<div class="rm-row"><code class="rm-in">${esc(line)}</code><span aria-hidden="true">→</span><code class="rm-py">${esc(py)}</code></div>`).join("")}</section>` : ""}
+        ${o.readMap ? `<section class="readmap"><h3>Как прочитать вход ${o.ri || o.sample.a ? '<button class="ri-i" type="button" data-ri title="Выполнение по шагам: input → split → map → list">🐞 Debug</button>' : ""}</h3>${o.readNote ? `<p>${esc(o.readNote)}</p>` : ""}${o.readMap.map(([line, py]) => `<div class="rm-row"><code class="rm-in">${esc(line)}</code><span aria-hidden="true">→</span><code class="rm-py">${esc(py)}</code></div>`).join("")}</section>` : ""}
       </div>
       <div class="work"><div>
         <label for="code-${i + 1}" class="hint" style="display:block;margin:0 0 6px">Программа для заказа ${o.k + 1} · ${o.help}</label>
@@ -1175,7 +1257,7 @@ window.ReadInput = (function () {
     const ed = el.querySelector(".editor");
     ed.value = saved.code[i] != null ? saved.code[i] : o.starter;
     const riBtn = el.querySelector("[data-ri]");
-    if (riBtn) riBtn.addEventListener("click", () => ReadInput.open({ line: o.sample.a.join(" "), nLine: String(o.sample.a.length), aName: "pizzas", nName: "hours" }));
+    if (riBtn) riBtn.addEventListener("click", () => ReadInput.open(o.ri ? o.ri(o.sample) : { line: o.sample.a.join(" "), nLine: String(o.sample.a.length), aName: "pizzas", nName: "hours" }));
     el.querySelector("[data-try]").addEventListener("click", () => trySample(i, el));
     el.querySelector("[data-send]").addEventListener("click", () => submit(i, el));
     el.querySelector("[data-dbg]").addEventListener("click", () => debugSample(i, el));
