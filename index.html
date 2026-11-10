@@ -534,6 +534,7 @@ li.CodeMirror-hint-active { background: var(--ink); color: var(--paper); } li.Co
   </header>
   <p class="lede">Пиццерии нужна автоматика. Каждый заказ — маленькая программа на Python. Напиши её, нажми «Сдать заказ», и пиццерия проверит программу на нескольких новых днях работы. Все дни прошли — на пиццу падает новый слой. Пять заказов, и пицца уходит в печь.</p>
   <p class="rule"><b>Правило кухни:</b> переменные называем так, чтобы было понятно, что внутри: <code>hours</code>, <code>pizzas</code>, <code>total</code>, <code>prefix</code> — а не <code>n</code>, <code>a</code>, <code>s</code>, <code>p</code>. По-английски, маленькими буквами, слова через <code>_</code>: <code>last_hour</code>.</p>
+  <p class="rule"><b>Честная кухня:</b> списывать нельзя. Пиццерия замечает, если уйти на другую вкладку, а чужой код в заказ не вставится — пиши сама.</p>
   <p class="py-status" id="py-status">Python загружается…</p>
 
   <div class="stage">
@@ -1199,5 +1200,98 @@ window.ReadInput = (function () {
     await runPy("print(1)", "", 2000);
     pyReady = true; $("py-status").textContent = "Python готов. Пиши программу прямо в заказе.";
   })();
+})();
+</script>
+
+<!-- «Ира, не списывай!» — если ушла со страницы (другая вкладка или окно) или вставляет в редактор код,
+     скопированный не здесь, страница говорит это вслух и показывает плашку. Не больше 3 раз за день
+     на этом устройстве, потом молчит. Чужой код не вставляется всегда. -->
+<style>
+.nocopy { position: fixed; z-index: 1000; left: 50%; top: max(16px, env(safe-area-inset-top, 0px)); transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px)); display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 18px;
+  background: var(--tomato); color: var(--paper); box-shadow: 0 6px 0 #9E2B1C, 0 18px 40px rgba(0,0,0,.35); cursor: pointer;
+  font-family: var(--display); font-size: clamp(18px, 4.5vw, 26px); line-height: 1.15; animation: nocopy-in .5s cubic-bezier(.2,1.4,.4,1) both; }
+.nocopy[hidden] { display: none; }
+.nocopy .eyes { font-size: 1.6em; line-height: 1; flex: none; }
+.nocopy small { display: block; margin-top: 4px; font-family: var(--body); font-size: 14px; font-weight: 500; opacity: .92; }
+@keyframes nocopy-in { from { transform: translate(-50%, -140%); } to { transform: translate(-50%, 0); } }
+</style>
+<script>
+(() => {
+  "use strict";
+  const KEY = "ira-pizza-no-copy", MAX = 3, PHRASE = "Ира, не списывай!";
+  const day = () => new Date().toLocaleDateString("sv");            // 2026-11-10: счётчик живёт один день
+  let n = 0;
+  try { const s = JSON.parse(localStorage.getItem(KEY) || "{}"); if (s.day === day()) n = s.n | 0; } catch (e) {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ day: day(), n })); } catch (e) {} };
+
+  const box = document.createElement("div");
+  box.className = "nocopy"; box.hidden = true; box.setAttribute("role", "alert");
+  box.innerHTML = '<span class="eyes" aria-hidden="true">👀</span><div>' + PHRASE + "<small>Пиццу печём сами 🍕</small></div>";
+  document.body.appendChild(box);
+  let hideTimer = 0;
+  const hide = () => { clearTimeout(hideTimer); box.hidden = true; };
+  box.addEventListener("click", hide);
+
+  const ss = window.speechSynthesis;
+  let voice = null, spoke = false;
+  const pickVoice = () => { try { voice = ss.getVoices().find((v) => /^ru/i.test(v.lang)) || null; } catch (e) {} };
+  if (ss) { pickVoice(); try { ss.addEventListener("voiceschanged", pickVoice); } catch (e) {} }
+  function speak() {
+    if (!ss) return;
+    try {
+      ss.cancel();
+      const u = new SpeechSynthesisUtterance(PHRASE);
+      u.lang = "ru-RU"; u.rate = 0.95; if (voice) u.voice = voice;
+      u.onstart = () => { spoke = true; };
+      ss.speak(u);
+    } catch (e) {}
+  }
+  // iPad/iPhone дают говорить только после первого касания — «будим» голос тихой пустой фразой
+  const unlock = () => {
+    removeEventListener("pointerdown", unlock, true); removeEventListener("keydown", unlock, true);
+    try { if (ss) { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; ss.speak(u); } } catch (e) {}
+  };
+  addEventListener("pointerdown", unlock, true); addEventListener("keydown", unlock, true);
+
+  const small = box.querySelector("small");
+  function warn(why) {                     // false — сегодня уже предупредили 3 раза, молчим
+    if (n >= MAX) return false;
+    n++; save(); spoke = false;
+    small.textContent = why;
+    clearTimeout(hideTimer); box.hidden = false;
+    speak();
+    return true;
+  }
+
+  let away = false, warned = false, seq = 0, lastLeave = 0, lastCopy = 0;
+  function leave() {                       // ушла: другая вкладка, другое окно
+    if (away) return;
+    away = true; lastLeave = ++seq;
+    warned = warn("Пиццу печём сами 🍕"); // скажет сразу, пока она смотрит в другое окно
+  }
+  function back() {                        // вернулась: плашка ещё 5 секунд висит
+    if (!away) return;
+    away = false;
+    if (!warned) return;
+    if (!spoke && !(ss && (ss.speaking || ss.pending))) speak();   // браузер не дал сказать в фоне — скажем сейчас
+    clearTimeout(hideTimer); hideTimer = setTimeout(hide, 5000);
+  }
+  document.addEventListener("visibilitychange", () => (document.hidden ? leave() : back()));
+  addEventListener("blur", (e) => { if (e.target === window) leave(); });    // только окно целиком, не поле с кодом
+  addEventListener("focus", (e) => { if (e.target === window) back(); });
+
+  // Вставка в редактор кода: можно, только если скопировала здесь же и с тех пор не уходила со страницы.
+  // Иначе в буфере код откуда-то ещё — не вставляем.
+  const mark = () => { lastCopy = ++seq; };
+  ["copy", "cut", "dragstart"].forEach((t) => document.addEventListener(t, mark, true));
+  function foreign(e) {
+    if (!(e.target && e.target.closest && e.target.closest(".CodeMirror"))) return;
+    if (lastCopy > lastLeave) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (warn("Чужой код вставлять нельзя — пиши сама ✍️")) hideTimer = setTimeout(hide, 5000);
+  }
+  addEventListener("paste", foreign, true);
+  addEventListener("drop", foreign, true);
 })();
 </script>
