@@ -671,6 +671,9 @@ window.ReadInput = (function () {
   //   { k: "raw", code, set, say }             grid = []
   //   { k: "loop", v, n, body, say }           for v in range(n): + тело (append или unpack), body.texts — строки входа по кругам
   //   { k: "append", name, texts, unit }       name.append(list(map(int, input().split())))
+  //   { k: "set", name, text, num }            name = set(input().split())  или с num: set(map(int, input().split()))
+  //   { k: "words", name, text }               name = input().split()
+  //   { k: "str", name, text }                 name = input()
   function open(opts) {
     if (!styled) { const st = document.createElement("style"); st.textContent = CSS; document.head.appendChild(st); styled = true; }
     const prog = (opts && opts.prog) || legacy(opts);
@@ -691,6 +694,11 @@ window.ReadInput = (function () {
         const set = [[s.name, "[" + arr.map(listRepr).join(", ") + "]", "list"]];
         if (fast) S({ part: "all", row: "appendFast", grid, set }); else { read(); S({ part: "list", row: "list" }); S({ part: "append", row: "append", grid, set }); } }
       else if (s.k === "raw") { (s.set || []).forEach(([nm]) => { env[nm] = []; }); S({ part: "all", row: "raw", set: s.set }); }
+      else if (s.k === "set") { const uniq = [...new Set(s.num ? nums : words)];
+        S({ part: "input", row: "input" }); S({ part: "split", row: "split" }); if (s.num) S({ part: "map", row: "map" });
+        S({ part: "set", row: "set", uniq, set: [[s.name, "{" + uniq.map((w) => (s.num ? w : "'" + w + "'")).join(", ") + "}", "set"]] }); }
+      else if (s.k === "words") { S({ part: "input", row: "input" }); S({ part: "split", row: "split", set: [[s.name, "[" + words.map((w) => "'" + w + "'").join(", ") + "]", "list"]] }); }
+      else if (s.k === "str") S({ part: "input", row: "input", set: [[s.name, "'" + text + "'", "str"]] });
       else if (s.k === "loop") s.body.texts.forEach((t, it) => { S({ part: "all", row: "loop", it, set: [[s.v, String(it), "int"]] }); exec(s.body, t, it > 0); });
     }
     prog.forEach((s) => exec(s, s.text, false));
@@ -732,6 +740,9 @@ window.ReadInput = (function () {
       else if (s.k === "unpack") code = `${P(on("unpack"), s.names.join(", "))} = ${READ()}`;
       else if (s.k === "append") code = `${P(on("append"), s.name + ".append(")}${P(on("list"), "list(")}${READ()}${P(on("list"), ")")}${P(on("append"), ")")}`;
       else if (s.k === "raw") code = P(on(), s.code);
+      else if (s.k === "set") code = `${esc(s.name)} = ${P(on("set"), "set(")}${s.num ? READ() : P(on("input"), "input()") + P(on("split"), ".split()")}${P(on("set"), ")")}`;
+      else if (s.k === "words") code = `${esc(s.name)} = ${P(on("input"), "input()")}${P(on("split"), ".split()")}`;
+      else if (s.k === "str") code = `${esc(s.name)} = ${P(on("input"), "input()")}`;
       else if (s.k === "loop") code = P(on(), `for ${s.v} in range(${s.n}):`);
       const seen = steps.slice(0, k).some((x) => x.ln === s.ln);
       return `<div class="ri-ln ${cur ? "cur" : seen ? "done" : ""}"><b>${cur ? "▶" : ""}</b><span>${"    ".repeat(L.indent)}${code}</span></div>`;
@@ -755,6 +766,7 @@ window.ReadInput = (function () {
       append: (s) => row(`${s.stmt.name}.append(…)`, gridv(s), tag("список списков"), "append"),
       appendFast: (s) => row(`${s.stmt.name}.append(list(${READX}))`, `${chars(s.text)}<span class="ri-br">→</span>${gridv(s)}`, tag("новая строка"), "appendFast"),
       raw: (s) => row(s.stmt.code, s.set ? esc(s.set[0][1]) : "", s.set ? tag(s.set[0][2]) : "", "raw"),
+      set: (s, live) => row(s.stmt.num ? `set(${READX})` : "set(input().split())", `<span class="ri-br">{</span>${boxes(s.uniq, s.stmt.num ? "n" : "s", !s.stmt.num, !live)}<span class="ri-br">}</span>`, tag(s.stmt.num ? "set из int" : "set из str"), "set"),
       loop: (s) => row(`for ${s.stmt.v} in range(${s.stmt.n})`, `<span class="ri-pair"><b>${esc(s.stmt.v)}</b> = <span class="ri-box n in">${s.it}</span></span>`, tag(`круг ${s.it + 1} из ${s.stmt.body.texts.length}`), "loop"),
     };
     // Главная мысль шага — крупно; дополнительное — мелко под ней.
@@ -762,9 +774,16 @@ window.ReadInput = (function () {
     const SAY = {
       input: (s) => s.stmt.k === "int"
         ? [`Это текст "${esc(s.text)}", а не число`, `С текстом не посчитать: <code>"${esc(s.text)}" + "1"</code> даст <code>"${esc(s.text)}1"</code>.`]
+        : s.stmt.k === "str" ? [`Готово: ${esc(s.stmt.name)} — строка, вместе с пробелами`, `Строка — тоже набор символов: <code>set(${esc(s.stmt.name)})</code> разберёт её на отдельные буквы.`]
+        : s.stmt.k === "words" || (s.stmt.k === "set" && !s.stmt.num) ? ["Вся строка — один текст, вместе с пробелами", "Нам нужны отдельные слова — режем строку по пробелам."]
         : ["Вся строка — один текст, вместе с пробелами", `С текстом не посчитать: <code>"3" + "7"</code> даст <code>"37"</code>, а не 10.`],
       int: (s) => [`Теперь это число ${esc(s.nums[0])} — с ним можно считать`, `<code>int(…)</code> превращает текст в целое число. Оно сохраняется в <code>${esc(s.stmt.name)}</code>.`],
-      split: (s) => [`Разрезали по пробелам: ${s.words.length} ${plural(s.words.length, "слово", "слова", "слов")}, но это всё ещё текст`, "Кавычки на месте — значит, это строки, не числа."],
+      split: (s) => s.stmt.k === "words" ? [`Готово: ${esc(s.stmt.name)} — список из ${s.words.length} ${plural(s.words.length, "слова", "слов", "слов")}`, "Слова остаются строками — числа здесь не нужны. Повторы на месте, порядок — как во входе."]
+        : s.stmt.k === "set" && !s.stmt.num ? [`Разрезали по пробелам: ${s.words.length} ${plural(s.words.length, "слово", "слова", "слов")}`, "Пока это список: повторы на месте. Осталось сделать из него множество."]
+        : [`Разрезали по пробелам: ${s.words.length} ${plural(s.words.length, "слово", "слова", "слов")}, но это всё ещё текст`, "Кавычки на месте — значит, это строки, не числа."],
+      set: (s) => { const n = s.uniq.length, all = (s.stmt.num ? s.nums : s.words).length, d = all - n;
+        return [`Готово: ${esc(s.stmt.name)} — множество, ${n} ${plural(n, "разный элемент", "разных элемента", "разных элементов")}`,
+          (d ? `Было ${all}, повторы выброшены (${d}). ` : "Повторов не было. ") + "Порядок у множества не гарантирован — поэтому печатаем через <code>sorted(…)</code>."]; },
       map: () => ["Каждое слово превращается в число", `<code>map</code> — ещё не список, а конвейер: у него нельзя спросить <code>[0]</code> или <code>len</code>.`],
       list: (s) => {
         if (s.stmt.k === "append") return ["Строка стала списком чисел", `Осталось положить его в <code>${esc(s.stmt.name)}</code>.`];
@@ -800,7 +819,7 @@ window.ReadInput = (function () {
         : '<span class="ri-empty">пока пусто — присваивание в конце строки</span>';
       await wait(30); if (my !== run) return;
       ov.querySelectorAll(`.ri-row[data-r="${st.row}"]`).forEach((el) => el.classList.add("in"));
-      if (st.row === "split" || st.row === "list") {
+      if (st.row === "split" || st.row === "list" || st.row === "set") {
         for (const b of ov.querySelectorAll(`.ri-val[data-r="${st.row}"] .ri-box`)) { await wait(140); if (my !== run) return; b.classList.add("in"); }
       }
       if (st.row === "map") {
@@ -1025,7 +1044,492 @@ window.ReadInput = (function () {
       answer: (d) => { const p = pre(promoted(d)); return d.qs.map(([a, b]) => p[b] - p[a - 1]).join("\n"); } },
   ];
 
-  // Серии идут по очереди: следующая открывается, когда пройдена предыдущая.
+  // ---------- Серия 4. Склад начинок: множества (set) ----------
+  // Каждый приём — три заказа подряд: сначала почти готовый код, потом половина, потом своя программа.
+  const TOPS = ["сыр", "томаты", "грибы", "ветчина", "пепперони", "оливки", "ананас", "лук", "перец", "бекон", "курица", "базилик", "кукуруза", "моцарелла", "халапеньо", "шпинат", "чеснок", "креветки", "салями", "рукола", "пармезан", "тунец"];
+  const PIZZAS = ["маргарита", "пепперони", "гавайская", "грибная", "мясная", "сырная", "овощная", "барбекю", "диабло", "карбонара", "цезарь", "морская", "деревенская", "острая", "детская"];
+  const NAMES = ["Аня", "Миша", "Олег", "Вика", "Дима", "Катя", "Петя", "Соня", "Гоша", "Ира"];
+  const SIGN = ["ИРА", "ПИЦЦА", "КОИН", "СЫР", "ГРИБЫ", "ТЕСТО", "ПЕЧЬ", "ДОСТАВКА", "МЕНЮ", "ВКУСНО", "ГОРЯЧО", "СОУС", "ТОМАТЫ", "БАЗИЛИК", "КУХНЯ", "ОЛИВКИ"];
+  const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = rint(0, i); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const pick = (pool, k) => shuffle(pool).slice(0, k);                                      // k разных
+  const draw = (pool, n) => Array.from({ length: n }, () => pool[rint(0, pool.length - 1)]);  // n штук, с повторами
+  const az = (xs) => [...xs].sort();                                                        // как sorted() в Python для слов
+  const up = (xs) => [...xs].sort((x, y) => x - y);                                         // числа по возрастанию
+  const orNo = (xs, no) => (xs.length ? xs.join(" ") : no);
+  const range1 = (n) => Array.from({ length: n }, (_, i) => i + 1);
+  const inter = (A, B) => { const b = new Set(B); return [...new Set(A)].filter((x) => b.has(x)); };
+  const minus = (A, B) => { const b = new Set(B); return [...new Set(A)].filter((x) => !b.has(x)); };
+  const firstRep = (xs) => { const seen = new Set(); for (let i = 0; i < xs.length; i++) { if (seen.has(xs[i])) return [xs[i], i + 1]; seen.add(xs[i]); } return null; };
+  // два набора начинок: иногда без общих, чтобы проверить ответ «НЕТ»
+  const twoTops = (na, nb) => { const A = pick(TOPS, na); const B = Math.random() < 0.25 ? pick(TOPS.filter((x) => !A.includes(x)), nb) : pick(TOPS, nb); return { A, B }; };
+  // Плитки дня: каждое слово или число — плитка; повтор (такое уже было раньше) обведён.
+  const repViz = (items, what = "Разных") => { const seen = new Set(); let first = true;
+    return { kind: "tape", values: items, hl: (h) => items.indexOf(items[h]) < h, title: (h) => (items.indexOf(items[h]) < h ? "повтор" : "впервые"),
+      meter: (s, x) => { if (first) { first = false; return `${what} пока: <b>0</b>`; } seen.add(x); return `${what} пока: <b>${seen.size}</b> · обведены повторы`; },
+      total: () => `${what}: <b>${seen.size}</b> из ${items.length}` }; };
+  // Две строки входа: плитки первой, черта, плитки второй; обведено то, что ищем.
+  const twoViz = (A, B, mark, text) => { const vals = [...A, "│", ...B];
+    return { kind: "tape", values: vals, hl: (h) => vals[h] !== "│" && mark(vals[h], h < A.length), title: (h) => (vals[h] === "│" ? "" : h < A.length ? "первая строка" : "вторая строка"),
+      meter: () => text, total: () => text }; };
+  const both = (A, B) => (x) => A.includes(x) && B.includes(x);
+  const set1 = (name, num) => (d) => ({ prog: [{ k: "set", name, num, text: (num ? d.x : d.w).join(" ") }] });
+  const set2 = (n1, n2, num) => (d) => ({ prog: [{ k: "set", name: n1, num, text: d.A.join(" ") }, { k: "set", name: n2, num, text: d.B.join(" ") }] });
+  const twoIn = (d) => d.A.join(" ") + "\n" + d.B.join(" ") + "\n";
+  const TWO_TOPS = (a, b) => [`В первой строке — ${a} через пробел (от 1 до 10 разных начинок).`, `Во второй строке — ${b} через пробел (от 1 до 10 разных начинок).`];
+  const S4 = [
+    // ── приём 1. Сколько разных: len(set(…)) ──
+    { title: "Разные начинки", layer: "Ананас", coins: 10,
+      story: "Повар пишет на доске каждую начинку, которую положил на пиццу, — даже если она уже была. Вечером хозяйке нужно знать, сколько <b>разных</b> начинок ушло за день, чтобы заказать банки на склад.",
+      inLines: ["Одна строка — начинки через пробел в том порядке, как их клали (от 1 до 100 слов). Начинки повторяются."],
+      outp: "Выведите одно число — сколько разных начинок.", explain: "Разные — сыр, грибы и томаты. Повторы не считаются: 3.", tl: 3,
+      readMap: [["сыр грибы сыр томаты грибы сыр", "toppings = set(input().split())"]], readNote: "Множество само выбрасывает повторы:", ri: set1("toppings"),
+      sample: { w: ["сыр", "грибы", "сыр", "томаты", "грибы", "сыр"] },
+      starter: "toppings = set(input().split())   # множество: каждая начинка в нём один раз\nprint(...)                          # сколько элементов в множестве?\n", help: "код почти готов, допиши одно место",
+      tip: "len(toppings) — сколько элементов в множестве. Повторы set уже выбросил — считать их не надо.",
+      viz: (d) => repViz(d.w), day: () => ({ w: draw(pick(TOPS, rint(3, 9)), rint(6, 18)) }), input: (d) => d.w.join(" ") + "\n", answer: (d) => String(new Set(d.w).size) },
+    { title: "Столики", layer: "Сыр", coins: 10,
+      story: "Официант записывает номер столика при каждом заказе. Сколько <b>разных</b> столиков сегодня что-то заказали?",
+      inLines: ["Одна строка — номера столиков через пробел (от 1 до 100 чисел, каждое от 1 до 30) в том порядке, как приходили заказы."],
+      outp: "Выведите одно число — сколько разных столиков сделали заказ.", explain: "Столики 5, 2 и 7 — три разных. Столик 5 заказывал трижды, но считается один раз.", tl: 3,
+      readMap: [["5 2 5 7 2 5", "tables = set(map(int, input().split()))"]], readNote: "Числа — как в списке, только вместо list — set:", ri: set1("tables", true),
+      sample: { x: [5, 2, 5, 7, 2, 5] },
+      starter: "# прочитай номера столиков сразу в множество\ntables = ...\nprint(len(tables))\n", help: "строку чтения пишешь сама",
+      tip: "Как список чисел, только вместо list — set: tables = set(map(int, input().split())).",
+      viz: (d) => repViz(d.x), day: () => ({ x: draw(range1(30).slice(0, rint(4, 30)), rint(5, 20)) }), input: (d) => d.x.join(" ") + "\n", answer: (d) => String(new Set(d.x).size) },
+    { title: "Курьеры дня", layer: "Лук", coins: 15,
+      story: "В журнале доставки у каждой поездки записано имя курьера. Сколько <b>разных</b> курьеров сегодня работало?",
+      inLines: ["В первой строке — число N (1 ≤ N ≤ 100): сколько было поездок.", "Во второй строке — N имён через пробел: кто вёз каждую поездку."],
+      outp: "Выведите одно число — сколько разных курьеров.", explain: "Поездки везли Аня, Миша и Олег — три курьера.", tl: 3,
+      readMap: [["6", "trips = int(input())"], ["Аня Миша Аня Олег Миша Аня", "couriers = set(input().split())"]],
+      ri: (d) => ({ prog: [{ k: "int", name: "trips", text: String(d.w.length) }, { k: "set", name: "couriers", text: d.w.join(" ") }] }),
+      sample: { w: ["Аня", "Миша", "Аня", "Олег", "Миша", "Аня"] },
+      starter: "# первая строка — сколько поездок, вторая — имена курьеров\n# выведи, сколько разных курьеров\n", help: "всю программу пишешь сама",
+      tip: "Первую строку всё равно надо прочитать — иначе input() вернёт её вместо имён. Потом set(input().split()) и len.",
+      viz: (d) => repViz(d.w), day: () => ({ w: draw(pick(NAMES, rint(2, 7)), rint(4, 16)) }), input: (d) => d.w.length + "\n" + d.w.join(" ") + "\n", answer: (d) => String(new Set(d.w).size) },
+
+    // ── приём 2. Без повторов и по порядку: sorted(set(…)) ──
+    { title: "Меню без повторов", layer: "Грибы", coins: 15,
+      story: "Повар Лёня записал начинки всех пицц дня в одну строку, с повторами. Для меню нужен список <b>разных</b> начинок <b>по алфавиту</b>.",
+      inLines: ["Одна строка — начинки через пробел (от 1 до 100 слов), могут повторяться."],
+      outp: "Выведите разные начинки по алфавиту через пробел.", explain: "Разные: томаты, сыр, грибы, базилик. По алфавиту: базилик, грибы, сыр, томаты.", tl: 3,
+      readMap: [["томаты сыр грибы сыр базилик томаты", "toppings = set(input().split())"]], ri: set1("toppings"),
+      sample: { w: ["томаты", "сыр", "грибы", "сыр", "базилик", "томаты"] },
+      starter: "toppings = set(input().split())\nmenu = ...       # sorted(…) делает из множества список по алфавиту\nprint(*menu)     # * печатает список через пробел, без [ ] и кавычек\n", help: "код почти готов, допиши одно место",
+      tip: "У множества нет порядка: Python может выдать его элементы как угодно. sorted(toppings) — список по алфавиту.",
+      viz: (d) => repViz(d.w), day: () => ({ w: draw(pick(TOPS, rint(3, 9)), rint(5, 16)) }), input: (d) => d.w.join(" ") + "\n", answer: (d) => az(new Set(d.w)).join(" ") },
+    { title: "Номера столиков", layer: "Ветчина", coins: 15,
+      story: "На кухне висит список столиков, которые сегодня заказывали. Выведи их номера <b>по возрастанию</b>, каждый один раз.",
+      inLines: ["Одна строка — номера столиков через пробел (от 1 до 100 чисел от 1 до 30), могут повторяться."],
+      outp: "Выведите разные номера по возрастанию через пробел.", explain: "Разные: 12, 3, 7, 1. По возрастанию — 1 3 7 12. Это числа, а не слова, поэтому 12 идёт после 7.", tl: 3,
+      readMap: [["12 3 7 3 12 1", "tables = set(map(int, input().split()))"]], ri: set1("tables", true),
+      sample: { x: [12, 3, 7, 3, 12, 1] },
+      starter: "tables = set(map(int, input().split()))\n# выведи номера по возрастанию через пробел\n", help: "печать пишешь сама",
+      tip: "print(*sorted(tables)). Читаем через map(int, …): слова отсортировались бы как слова — «12» раньше «3».",
+      viz: (d) => repViz(d.x), day: () => ({ x: draw(range1(30), rint(5, 18)) }), input: (d) => d.x.join(" ") + "\n", answer: (d) => up(new Set(d.x)).join(" ") },
+    { title: "Буквы для вывески", layer: "Перец", coins: 20,
+      story: "Для новой вывески заказывают буквы-лампочки — каждую букву по одной штуке. Какие <b>разные</b> буквы нужны? Пробел — не буква. Выведи буквы по алфавиту одной строкой, слитно.",
+      inLines: ["Одна строка — надпись заглавными русскими буквами (без буквы Ё), слова через пробел, до 60 символов."],
+      outp: "Выведите разные буквы надписи по алфавиту, без пробелов.", explain: "Буквы: И, Р, А, П, Ц (А и И повторяются). По алфавиту и слитно: АИПРЦ.", tl: 3,
+      readMap: [["ИРА ПИЦЦА", "sign = input()"]], readNote: "Строка — тоже набор: set(sign) разберёт её на символы.",
+      ri: (d) => ({ prog: [{ k: "str", name: "sign", text: d.t }] }),
+      sample: { t: "ИРА ПИЦЦА" },
+      starter: "# прочитай надпись, собери множество её букв без пробела\n# выведи буквы по алфавиту слитно\n", help: "всю программу пишешь сама",
+      tip: "set(sign) — множество символов, вместе с пробелом. Убери пробел: letters.discard(\" \"). Склеить буквы без пробелов: \"\".join(sorted(letters)).",
+      viz: (d) => repViz([...d.t.replace(/ /g, "")], "Разных букв"), day: () => ({ t: pick(SIGN, rint(1, 4)).join(" ") }), input: (d) => d.t + "\n", answer: (d) => az(new Set(d.t.replace(/ /g, ""))).join("") },
+
+    // ── приём 3. Уже было? seen = set() и in ──
+    { title: "Постоянные гости", layer: "Оливки", coins: 15,
+      story: "У каждого гостя — карта с номером. Касса пробивает карты по очереди и для каждой пишет <b>НОВЫЙ</b>, если гость сегодня впервые, или <b>СНОВА</b>, если эта карта сегодня уже была.",
+      inLines: ["Одна строка — номера карт через пробел в порядке прихода (от 1 до 100 чисел от 1 до 999)."],
+      outp: "Для каждой карты выведите строку: НОВЫЙ или СНОВА.", explain: "Карта 7 — впервые, 15 — впервые, 7 — уже была, 3 — впервые, 15 — уже была.", tl: 3,
+      readMap: [["7 15 7 3 15", "cards = list(map(int, input().split()))"]], readNote: "Здесь важен порядок прихода — поэтому список, а не множество:",
+      ri: (d) => ({ prog: [{ k: "list", name: "cards", text: d.x.join(" ") }] }),
+      sample: { x: [7, 15, 7, 3, 15] },
+      starter: "cards = list(map(int, input().split()))   # список: порядок важен\nseen = set()                              # карты, которые сегодня уже были\nfor card in cards:\n    if ...:                               # эта карта уже была?\n        print(\"СНОВА\")\n    else:\n        print(\"НОВЫЙ\")\n        seen.add(card)                    # запомнили гостя\n", help: "код почти готов, допиши одно место",
+      tip: "card in seen — «есть ли карта в множестве». Множество отвечает мгновенно, даже если в нём миллион карт.",
+      viz: (d) => repViz(d.x, "Разных гостей"), day: () => ({ x: draw(Array.from({ length: rint(3, 10) }, () => rint(1, 999)), rint(4, 14)) }), input: (d) => d.x.join(" ") + "\n",
+      answer: (d) => d.x.map((c, i) => (d.x.indexOf(c) < i ? "СНОВА" : "НОВЫЙ")).join("\n") },
+    { title: "Первый повтор", layer: "Томаты", coins: 20,
+      story: "Новый повар кладёт начинки по одной, и класть одну и ту же дважды нельзя. Шеф смотрит запись: какая начинка <b>первой</b> попала на пиццу второй раз? Если повторов не было — выведи <b>НЕТ</b>.",
+      inLines: ["Одна строка — начинки через пробел в том порядке, как их клали (от 1 до 30 слов)."],
+      outp: "Выведите начинку, которая первой повторилась, или НЕТ.", explain: "Сыр, томаты, грибы — всё впервые. Четвёртыми снова томаты — это первый повтор. Сыр повторился позже.", tl: 3,
+      readMap: [["сыр томаты грибы томаты сыр", "toppings = input().split()"]], readNote: "Порядок важен — читаем в список слов:",
+      ri: (d) => ({ prog: [{ k: "words", name: "toppings", text: d.w.join(" ") }] }),
+      sample: { w: ["сыр", "томаты", "грибы", "томаты", "сыр"] },
+      starter: "toppings = input().split()   # список слов: порядок важен\nseen = set()\n# иди по начинкам: если уже была — печатай её и break; иначе запомни в seen\n# если повторов не было — печатай НЕТ\n", help: "цикл пишешь сама",
+      tip: "if topping in seen: print(topping) и break, иначе seen.add(topping). «НЕТ» — в ветке else у цикла for: она срабатывает, только если break не случился.",
+      viz: (d) => repViz(d.w), day: () => Math.random() < 0.3 ? { w: pick(TOPS, rint(2, 8)) } : { w: draw(pick(TOPS, rint(3, 8)), rint(4, 12)) },
+      input: (d) => d.w.join(" ") + "\n", answer: (d) => { const r = firstRep(d.w); return r ? r[0] : "НЕТ"; } },
+    { title: "Купоны", layer: "Бекон", coins: 20,
+      story: "Купон на бесплатную пиццу работает <b>один раз</b>. Касса проверяет купоны по очереди: если купон показали впервые — <b>ПИЦЦА</b>, если его уже показывали — <b>ОТКАЗ</b>. В конце выведи, сколько пицц выдали бесплатно.",
+      inLines: ["В первой строке — число N (1 ≤ N ≤ 100): сколько раз показывали купоны.", "Во второй строке — N кодов через пробел. Код — латинская буква и цифра, например A7."],
+      outp: "Выведите N строк — ПИЦЦА или ОТКАЗ для каждого купона, а в последней строке — сколько пицц выдали.", explain: "A7 и B2 — впервые, A7 — повтор, C9 — впервые, B2 — повтор. Пицц выдали три.", tl: 3,
+      readMap: [["5", "coupons = int(input())"], ["A7 B2 A7 C9 B2", "codes = input().split()"]],
+      ri: (d) => ({ prog: [{ k: "int", name: "coupons", text: String(d.w.length) }, { k: "words", name: "codes", text: d.w.join(" ") }] }),
+      sample: { w: ["A7", "B2", "A7", "C9", "B2"] },
+      starter: "# вход: сколько купонов и их коды. Имена — понятные: coupons, codes, used, free_pizzas\n", help: "всю программу пишешь сама",
+      tip: "used = set() — уже показанные купоны. Для каждого кода: если code in used — ОТКАЗ, иначе ПИЦЦА, used.add(code) и +1 в копилку. А можно в конце просто len(used).",
+      viz: (d) => repViz(d.w, "Разных купонов"), day: () => ({ w: draw(Array.from({ length: rint(2, 8) }, () => "ABCDEF"[rint(0, 5)] + rint(1, 9)), rint(3, 12)) }),
+      input: (d) => d.w.length + "\n" + d.w.join(" ") + "\n", answer: (d) => d.w.map((c, i) => (d.w.indexOf(c) < i ? "ОТКАЗ" : "ПИЦЦА")).concat(String(new Set(d.w).size)).join("\n") },
+
+    // ── приём 4. Общее: пересечение & ──
+    { title: "Пицца для двоих", layer: "Кукуруза", coins: 15,
+      story: "Ира и Лёня делят одну пиццу. Каждый написал, какие начинки любит. На пиццу кладут только те, что любят <b>оба</b>. Выведи их по алфавиту, а если таких нет — <b>НЕТ</b>.",
+      inLines: TWO_TOPS("начинки, которые любит Ира", "начинки, которые любит Лёня"),
+      outp: "Выведите общие начинки по алфавиту через пробел или НЕТ.", explain: "И у Иры, и у Лёни есть сыр и ветчина. По алфавиту: ветчина, сыр.", tl: 3,
+      readMap: [["сыр грибы ананас ветчина", "ira = set(input().split())"], ["ветчина сыр лук", "lenya = set(input().split())"]], ri: set2("ira", "lenya"),
+      sample: { A: ["сыр", "грибы", "ананас", "ветчина"], B: ["ветчина", "сыр", "лук"] },
+      starter: "ira = set(input().split())\nlenya = set(input().split())\ncommon = ...         # пересечение: что есть в обоих множествах — знак &\nif common:           # пустое множество в if — «ложь»\n    print(*sorted(common))\nelse:\n    print(\"НЕТ\")\n", help: "код почти готов, допиши одно место",
+      tip: "ira & lenya — пересечение: только то, что есть и там, и там.",
+      viz: (d) => twoViz(d.A, d.B, both(d.A, d.B), "Обведено то, что любят оба"), day: () => twoTops(rint(1, 7), rint(1, 7)), input: twoIn, answer: (d) => orNo(az(inter(d.A, d.B)), "НЕТ") },
+    { title: "Общие смены", layer: "Пепперони", coins: 15,
+      story: "Курьеры Аня и Миша записали, в какие дни месяца они работали. В какие дни они работали <b>вместе</b>? Выведи дни по возрастанию, а если таких нет — <b>НЕТ</b>.",
+      inLines: ["В первой строке — дни Ани: числа от 1 до 30 через пробел (от 1 до 15 разных дней).", "Во второй строке — дни Миши, так же."],
+      outp: "Выведите общие дни по возрастанию через пробел или НЕТ.", explain: "Аня работала 1, 5, 8, 12 и 20-го, Миша — 5, 6, 12 и 30-го. Вместе — 5-го и 12-го.", tl: 3,
+      readMap: [["1 5 8 12 20", "anya = set(map(int, input().split()))"], ["5 6 12 30", "misha = set(map(int, input().split()))"]], ri: set2("anya", "misha", true),
+      sample: { A: [1, 5, 8, 12, 20], B: [5, 6, 12, 30] },
+      starter: "anya = set(map(int, input().split()))\nmisha = set(map(int, input().split()))\n# общие дни — по возрастанию, или НЕТ\n", help: "пересечение и печать пишешь сама",
+      tip: "together = anya & misha. Дальше — как в прошлом заказе: if together: print(*sorted(together)) else: print(\"НЕТ\").",
+      viz: (d) => twoViz(d.A, d.B, both(d.A, d.B), "Обведены дни, когда работали оба"),
+      day: () => ({ A: up(pick(range1(30), rint(1, 12))), B: up(pick(range1(30), rint(1, 12))) }), input: twoIn, answer: (d) => orNo(up(inter(d.A, d.B)), "НЕТ") },
+    { title: "Что уже есть на складе", layer: "Салями", coins: 20,
+      story: "Для новой пиццы нужен набор начинок — рецепт. На складе — свой набор банок. Сколько начинок рецепта <b>уже есть</b> на складе?",
+      inLines: TWO_TOPS("начинки рецепта", "начинки, которые есть на складе"),
+      outp: "Выведите одно число — сколько начинок рецепта есть на складе.", explain: "Из рецепта на складе есть сыр и томаты — 2. Базилика нет.", tl: 3,
+      readMap: [["сыр томаты базилик", "recipe = set(input().split())"], ["сыр лук томаты перец", "store = set(input().split())"]], ri: set2("recipe", "store"),
+      sample: { A: ["сыр", "томаты", "базилик"], B: ["сыр", "лук", "томаты", "перец"] },
+      starter: "# рецепт и склад — два множества. Имена: recipe, store\n", help: "всю программу пишешь сама",
+      tip: "len(recipe & store) — сколько элементов в пересечении.",
+      viz: (d) => twoViz(d.A, d.B, both(d.A, d.B), "Обведено то, что есть и в рецепте, и на складе"), day: () => twoTops(rint(1, 6), rint(1, 10)), input: twoIn, answer: (d) => String(inter(d.A, d.B).length) },
+
+    // ── приём 5. Чего не хватает: разность - ──
+    { title: "Закупка", layer: "Курица", coins: 15,
+      story: "Тот же рецепт и тот же склад. Теперь нужен список покупок: начинки рецепта, которых на складе <b>нет</b>, по алфавиту. Если всё есть — <b>НИЧЕГО</b>.",
+      inLines: TWO_TOPS("начинки рецепта", "начинки, которые есть на складе"),
+      outp: "Выведите недостающие начинки по алфавиту через пробел или НИЧЕГО.", explain: "Сыр и томаты на складе есть, а базилика и оливок нет. По алфавиту: базилик оливки.", tl: 3,
+      readMap: [["сыр томаты базилик оливки", "recipe = set(input().split())"], ["сыр лук томаты перец", "store = set(input().split())"]], ri: set2("recipe", "store"),
+      sample: { A: ["сыр", "томаты", "базилик", "оливки"], B: ["сыр", "лук", "томаты", "перец"] },
+      starter: "recipe = set(input().split())\nstore = set(input().split())\nto_buy = ...         # разность: что есть в recipe, но нет в store — знак -\nif to_buy:\n    print(*sorted(to_buy))\nelse:\n    print(\"НИЧЕГО\")\n", help: "код почти готов, допиши одно место",
+      tip: "recipe - store — всё из recipe, чего нет в store. Порядок важен: store - recipe — совсем другое множество.",
+      viz: (d) => twoViz(d.A, d.B, (x, first) => first && !d.B.includes(x), "Обведено то, что надо купить"),
+      day: () => Math.random() < 0.2 ? (() => { const B = pick(TOPS, rint(4, 10)); return { A: pick(B, rint(1, B.length)), B }; })() : twoTops(rint(1, 6), rint(1, 10)),
+      input: twoIn, answer: (d) => orNo(az(minus(d.A, d.B)), "НИЧЕГО") },
+    { title: "Пицца для Лёни", layer: "Моцарелла", coins: 15,
+      story: "Лёня ест не всё. Из «пиццы со всем» убери начинки, которые Лёня не ест, и выведи то, что осталось, по алфавиту. Если ничего не осталось — <b>НИЧЕГО</b>.",
+      inLines: ["В первой строке — начинки «пиццы со всем» через пробел (от 1 до 10 разных).", "Во второй строке — что Лёня не ест (от 1 до 6 разных). Там бывают и начинки, которых на этой пицце нет."],
+      outp: "Выведите оставшиеся начинки по алфавиту через пробел или НИЧЕГО.", explain: "Убрали лук и оливки. Ананаса на пицце и так не было. Осталось: грибы перец сыр.", tl: 3,
+      readMap: [["сыр лук грибы перец оливки", "pizza = set(input().split())"], ["лук оливки ананас", "banned = set(input().split())"]], ri: set2("pizza", "banned"),
+      sample: { A: ["сыр", "лук", "грибы", "перец", "оливки"], B: ["лук", "оливки", "ананас"] },
+      starter: "pizza = set(input().split())\nbanned = set(input().split())   # что Лёня не ест\n# выведи, что осталось, по алфавиту — или НИЧЕГО\n", help: "разность и печать пишешь сама",
+      tip: "left = pizza - banned. Дальше — как в «Закупке».",
+      viz: (d) => twoViz(d.A, d.B, (x, first) => first && !d.B.includes(x), "Обведено то, что останется на пицце"),
+      day: () => Math.random() < 0.2 ? (() => { const A = pick(TOPS, rint(1, 4)); return { A, B: shuffle(A.concat(pick(TOPS.filter((x) => !A.includes(x)), rint(0, 2)))) }; })() : { A: pick(TOPS, rint(2, 10)), B: pick(TOPS, rint(1, 6)) },
+      input: twoIn, answer: (d) => orNo(az(minus(d.A, d.B)), "НИЧЕГО") },
+    { title: "Свободные столики", layer: "Халапеньо", coins: 20,
+      story: "В зале <b>N</b> столиков с номерами от 1 до N. Официант записывал номера занятых столиков — некоторые по нескольку раз. Какие столики <b>свободны</b>? Выведи их по возрастанию, а если свободных нет — <b>НЕТ</b>.",
+      inLines: ["В первой строке — число N (1 ≤ N ≤ 40): сколько столиков в зале.", "Во второй строке — номера занятых столиков через пробел (от 1 до 60 чисел от 1 до N, могут повторяться)."],
+      outp: "Выведите свободные столики по возрастанию через пробел или НЕТ.", explain: "Заняты 3, 1, 8 и 5. Из столиков 1–8 свободны 2, 4, 6 и 7.", tl: 3,
+      readMap: [["8", "tables = int(input())"], ["3 1 3 8 5 1", "busy = set(map(int, input().split()))"]],
+      ri: (d) => ({ prog: [{ k: "int", name: "tables", text: String(d.n) }, { k: "set", name: "busy", num: true, text: d.x.join(" ") }] }),
+      sample: { n: 8, x: [3, 1, 3, 8, 5, 1] },
+      starter: "# все столики, занятые столики — и разность. Имена: tables, busy, free\n", help: "всю программу пишешь сама",
+      tip: "Все столики — set(range(1, tables + 1)). Минус занятые — останутся свободные.",
+      viz: (d) => ({ kind: "tape", values: range1(d.n), hl: (h) => d.x.includes(h + 1), title: (h) => (d.x.includes(h + 1) ? "занят" : "свободен"), meter: () => "Обведены занятые столики", total: () => "Обведены занятые столики" }),
+      day: () => { const n = rint(3, 20), busy = Math.random() < 0.2 ? range1(n) : pick(range1(n), rint(1, n)); return { n, x: shuffle(busy.concat(draw(busy, rint(0, n)))) }; },
+      input: (d) => d.n + "\n" + d.x.join(" ") + "\n", answer: (d) => orNo(minus(range1(d.n), d.x), "НЕТ") },
+
+    // ── приём 6. Вместе и только у одного: | и ^ ──
+    { title: "Общее меню", layer: "Шпинат", coins: 15,
+      story: "Две пиццерии сети объединяют меню. У каждой свой список пицц, некоторые пиццы есть в обеих. Сколько пицц будет в <b>общем меню</b>, если каждую писать один раз?",
+      inLines: ["В первой строке — пиццы первой пиццерии через пробел (от 1 до 12 разных).", "Во второй строке — пиццы второй пиццерии, так же."],
+      outp: "Выведите одно число — сколько разных пицц в общем меню.", explain: "Маргарита и пепперони есть в обеих — в общем меню они один раз. Всего: маргарита, пепперони, гавайская, грибная, мясная — 5.", tl: 3,
+      readMap: [["маргарита пепперони гавайская", "first = set(input().split())"], ["пепперони грибная мясная маргарита", "second = set(input().split())"]], ri: set2("first", "second"),
+      sample: { A: ["маргарита", "пепперони", "гавайская"], B: ["пепперони", "грибная", "мясная", "маргарита"] },
+      starter: "first = set(input().split())\nsecond = set(input().split())\nmenu = ...         # объединение: всё из обоих множеств без повторов — знак |\nprint(len(menu))\n", help: "код почти готов, допиши одно место",
+      tip: "first | second — объединение: всё, что есть хотя бы в одном. Общие пиццы в нём по одному разу.",
+      viz: (d) => twoViz(d.A, d.B, (x, first) => !first && d.A.includes(x), "Обведены пиццы, которые уже есть в первом меню"),
+      day: () => ({ A: pick(PIZZAS, rint(1, 9)), B: pick(PIZZAS, rint(1, 9)) }), input: twoIn, answer: (d) => String(new Set([...d.A, ...d.B]).size) },
+    { title: "Пицца пополам", layer: "Базилик", coins: 20,
+      story: "Ира и Лёня снова делят пиццу, теперь пополам. На свою половину каждый кладёт начинки, которые любит <b>только он</b>. Выведи все такие начинки — их любит ровно один из двоих — по алфавиту. Если таких нет — <b>НЕТ</b>.",
+      inLines: TWO_TOPS("начинки, которые любит Ира", "начинки, которые любит Лёня"),
+      outp: "Выведите начинки, которые любит ровно один из двоих, по алфавиту через пробел или НЕТ.", explain: "Сыр и ветчину любят оба — их не берём. Только Ира — грибы и ананас, только Лёня — лук. По алфавиту: ананас грибы лук.", tl: 3,
+      readMap: [["сыр грибы ананас ветчина", "ira = set(input().split())"], ["ветчина сыр лук", "lenya = set(input().split())"]], ri: set2("ira", "lenya"),
+      sample: { A: ["сыр", "грибы", "ананас", "ветчина"], B: ["ветчина", "сыр", "лук"] },
+      starter: "ira = set(input().split())\nlenya = set(input().split())\n# начинки, которые любит ровно один: знак ^ — или (ira - lenya) | (lenya - ira)\n", help: "главную строку и печать пишешь сама",
+      tip: "ira ^ lenya — симметричная разность: всё, что есть ровно в одном из множеств.",
+      viz: (d) => twoViz(d.A, d.B, (x) => !(d.A.includes(x) && d.B.includes(x)), "Обведено то, что любит только один"),
+      day: () => Math.random() < 0.15 ? (() => { const A = pick(TOPS, rint(1, 6)); return { A, B: shuffle(A) }; })() : twoTops(rint(1, 7), rint(1, 7)),
+      input: twoIn, answer: (d) => orNo(az([...minus(d.A, d.B), ...minus(d.B, d.A)]), "НЕТ") },
+    { title: "Вчера и сегодня", layer: "Чеснок", coins: 25,
+      story: "Хозяйка сравнивает гостей двух дней по номерам карт. Выведи три числа: сколько гостей приходили <b>оба дня</b>, сколько — <b>только вчера</b> и сколько — <b>только сегодня</b>.",
+      inLines: ["В первой строке — номера карт вчерашних гостей через пробел (от 1 до 30 чисел от 1 до 99; гость мог прийти дважды).", "Во второй строке — номера карт сегодняшних гостей, так же."],
+      outp: "Выведите три числа через пробел: оба дня, только вчера, только сегодня.", explain: "Оба дня — карты 8 и 15. Только вчера — 4, 16 и 7 (карта 4 приходила дважды, но гость один). Только сегодня — 23 и 42.", tl: 3,
+      readMap: [["4 8 15 16 4 7", "yesterday = set(map(int, input().split()))"], ["8 23 42 15 23", "today = set(map(int, input().split()))"]], ri: set2("yesterday", "today", true),
+      sample: { A: [4, 8, 15, 16, 4, 7], B: [8, 23, 42, 15, 23] },
+      starter: "# два множества и три ответа. Имена: yesterday, today\n", help: "всю программу пишешь сама",
+      tip: "Оба дня — yesterday & today, только вчера — yesterday - today, только сегодня — today - yesterday. Повторы не мешают: set их выбросит.",
+      viz: (d) => twoViz(d.A, d.B, both(d.A, d.B), "Обведены гости, которые приходили оба дня"),
+      day: () => { const pool = Array.from({ length: rint(4, 14) }, () => rint(1, 99)); return { A: draw(pool, rint(1, 12)), B: draw(pool, rint(1, 12)) }; },
+      input: twoIn, answer: (d) => [inter(d.A, d.B).length, minus(d.A, d.B).length, minus(d.B, d.A).length].join(" ") },
+
+    // ── босс: множество успевает там, где список — нет ──
+    { title: "Босс: золотая карта", layer: "Золотая карта", coins: 150, boss: true,
+      story: "Акция по всей сети: гость, чья карта <b>первой</b> пробьётся второй раз, получает золотую карту. За день касса пробила до 100 000 карт. Если проверять «была ли карта» поиском по списку, каждая проверка будет всё дольше — касса не успеет. Множество отвечает мгновенно.",
+      inLines: ["В первой строке — число N (1 ≤ N ≤ 100 000): сколько карт пробили.", "Во второй строке — N номеров карт через пробел (от 1 до 10⁹) в порядке прихода."],
+      outp: "Выведите номер золотой карты и место, на котором она пришла второй раз (места считаются с единицы). Если ни одна карта не повторилась — НЕТ.",
+      explain: "31, 8, 12 — впервые. На 4-м месте снова 8 — это первый повтор. Карта 31 повторилась позже, на 5-м месте.", tl: 6,
+      readMap: [["7", "count = int(input())"], ["31 8 12 8 31 5 12", "cards = list(map(int, input().split()))"]],
+      ri: (d) => ({ prog: [{ k: "int", name: "count", text: String(d.x.length) }, { k: "list", name: "cards", text: d.x.join(" ") }] }),
+      sample: { x: [31, 8, 12, 8, 31, 5, 12] },
+      starter: "# босс: вся программа твоя. Имена — понятные: count, cards, seen, place\n", help: "босс: пустой лист",
+      tip: "seen = set(). Идём по картам с местом: for place in range(count) и card = cards[place]. Если card in seen — печатаем card и place + 1 и break; иначе seen.add(card). «НЕТ» — в else у цикла.",
+      slow: "Слишком долго: программа ищет карту поиском по списку — с каждой картой всё дольше. Запоминай карты в множестве: card in seen отвечает мгновенно.",
+      bigLabel: () => "100 000 карт", bigWait: "Касса пищит без остановки, программа проверяет…",
+      viz: (d) => repViz(d.x, "Разных карт"),
+      day: (big) => {
+        const n = big ? 100000 : rint(5, 14), seen = new Set(), x = [];
+        while (x.length < n) { const c = big ? rint(1, 1000000000) : rint(1, 60); if (!seen.has(c)) { seen.add(c); x.push(c); } }
+        if (big ? Math.random() < 0.6 : Math.random() < 0.75) { const at = big ? n - rint(1, 2000) : rint(1, n - 1); x[at] = x[rint(0, at - 1)]; }
+        return { x, big };
+      },
+      input: (d) => d.x.length + "\n" + d.x.join(" ") + "\n", answer: (d) => { const r = firstRep(d.x); return r ? r.join(" ") : "НЕТ"; } },
+  ];
+
+  // ---------- Серия «Вывеска». Строки: индексы, срезы, методы ----------
+  // Каждый приём — три заказа подряд: сначала почти готовый код, потом половина, потом своя программа.
+  const SURNAMES = ["Петрова", "Смирнов", "Иванова", "Кузнецов", "Соколова", "Попов", "Лебедева", "Козлов", "Новикова", "Морозов"];
+  const MIRROR = ["шалаш", "казак", "потоп", "радар", "комок", "заказ", "кабак", "ротор", "топот", "довод", "око", "ага"];
+  const messy = (w) => [...w].map((c) => (Math.random() < 0.5 ? c.toUpperCase() : c.toLowerCase())).join("");
+  const cap = (w) => w[0].toUpperCase() + w.slice(1).toLowerCase();
+  const findAll = (text, sub) => { const at = []; let i = text.indexOf(sub); while (sub && i >= 0) { at.push(i); i = text.indexOf(sub, i + sub.length); } return at; };
+  const inAny = (text, sub) => (h) => findAll(text, sub).some((i) => h >= i && h < i + sub.length);
+  // Плитки дня: каждый символ строки — плитка с номером-индексом в подсказке; обведено то, что важно в этом заказе.
+  const strViz = (text, hl, msg) => { const ch = [...text];
+    return { kind: "tape", values: ch.map((c) => (c === " " ? "␣" : c)), hl: (h) => !!hl && hl(h, ch[h]), title: (h) => `индекс ${h}`, meter: () => msg, total: () => msg }; };
+  const linesViz = (rows, hl, msg) => ({ kind: "tape", values: rows, hl: (h) => hl(rows[h]), title: (h) => `строка ${h + 1}`, meter: () => msg, total: () => msg });
+  const str1 = (name) => (d) => ({ prog: [{ k: "str", name, text: d.t }] });
+  const S5 = [
+    // ── приём 1. Индексы и срезы ──
+    { title: "Подпись на коробке", layer: "И", coins: 10,
+      story: "Повар подписывает коробку коротко: первая и последняя буква названия пиццы. Выведи их через пробел.",
+      inLines: ["Одна строка — название пиццы: одно слово из маленьких русских букв (от 2 до 20 букв)."],
+      outp: "Выведите первую и последнюю букву через пробел.", explain: "name[0] — первая буква «м», name[-1] — последняя «а».", tl: 3,
+      readMap: [["маргарита", "name = input()"]], readNote: "Строка — ряд символов с номерами: первый — индекс 0.", ri: str1("name"),
+      sample: { t: "маргарита" },
+      starter: "name = input()          # name[0] — первая буква, name[1] — вторая…\nprint(name[0], ...)     # а последняя — индекс с конца, отрицательный\n", help: "код почти готов, допиши одно место",
+      tip: "name[-1] — последний символ строки, name[-2] — предпоследний. Длину считать не нужно.",
+      viz: (d) => strViz(d.t, (h) => h === 0 || h === d.t.length - 1, "Обведены первая и последняя буквы"),
+      day: () => ({ t: pick(PIZZAS.concat(TOPS), 1)[0] }), input: (d) => d.t + "\n", answer: (d) => d.t[0] + " " + d.t[d.t.length - 1] },
+    { title: "Код заказа", layer: "Р", coins: 15,
+      story: "У каждого заказа есть код, например <b>ИРА-2048-M</b>: три буквы пиццерии, дефис, номер заказа из четырёх цифр, ещё дефис и размер пиццы — S, M или L. Выведи номер заказа и размер через пробел.",
+      inLines: ["Одна строка — код заказа из 10 символов: три заглавные русские буквы, дефис, четыре цифры, дефис и латинская буква S, M или L."],
+      outp: "Выведите номер заказа (четыре цифры) и размер через пробел.", explain: "Цифры стоят на индексах 4, 5, 6, 7 — это срез code[4:8] = «2048». Размер — последний символ: code[-1] = «M».", tl: 3,
+      readMap: [["ИРА-2048-M", "code = input()"]], ri: str1("code"),
+      sample: { t: "ИРА-2048-M" },
+      starter: "code = input()\nnumber = ...       # срез: с какого индекса начинаются цифры и где кончаются?\nsize = ...         # последний символ\nprint(number, size)\n", help: "допиши два места",
+      tip: "Срез code[4:8] берёт символы с индекса 4 до 8, не включая 8, — ровно четыре цифры. Счёт с нуля: дефис — индекс 3.",
+      viz: (d) => strViz(d.t, (h) => (h >= 4 && h < 8) || h === 9, "Обведены номер и размер"),
+      day: () => ({ t: pick(["ИРА", "ПИЦ", "СЫР", "ТЕС", "ЛЕН"], 1)[0] + "-" + rint(1000, 9999) + "-" + "SML"[rint(0, 2)] }), input: (d) => d.t + "\n", answer: (d) => d.t.slice(4, 8) + " " + d.t[9] },
+    { title: "Вывеска в окне", layer: "А", coins: 20,
+      story: "Вывеску наклеили на стекло изнутри, и с улицы её читают задом наперёд. Хозяйка заказывает новую наклейку и хочет знать, как надпись выглядит с улицы. Выведи надпись задом наперёд.",
+      inLines: ["Одна строка — надпись: заглавные русские буквы и пробелы (до 40 символов)."],
+      outp: "Выведите ту же надпись задом наперёд.", explain: "Срез с шагом -1 читает строку с конца: «ИРА ПИЦЦА» → «АЦЦИП АРИ».", tl: 3,
+      readMap: [["ИРА ПИЦЦА", "sign = input()"]], ri: str1("sign"),
+      sample: { t: "ИРА ПИЦЦА" },
+      starter: "# прочитай надпись и выведи её задом наперёд\n", help: "всю программу пишешь сама",
+      tip: "sign[::-1] — срез с шагом -1: вся строка от конца к началу.",
+      viz: (d) => strViz(d.t, null, "С улицы читаем справа налево"), day: () => ({ t: pick(SIGN, rint(1, 3)).join(" ") }), input: (d) => d.t + "\n", answer: (d) => [...d.t].reverse().join("") },
+
+    // ── приём 2. Большие и маленькие буквы ──
+    { title: "Крик на кухню", layer: "П", coins: 10,
+      story: "На кухне шумно, поэтому экран для повара показывает заказ <b>заглавными буквами</b>. Переведи заказ в верхний регистр.",
+      inLines: ["Одна строка — заказ: слова из маленьких русских букв через пробел (до 60 символов)."],
+      outp: "Выведите тот же заказ заглавными буквами.", explain: "Каждая буква стала заглавной, пробелы остались на месте.", tl: 3,
+      readMap: [["пепперони и сырная", "order = input()"]], ri: str1("order"),
+      sample: { t: "пепперони и сырная" },
+      starter: "order = input()\nloud = ...      # метод строки, который делает все буквы заглавными\nprint(loud)\n", help: "код почти готов, допиши одно место",
+      tip: "order.upper() — новая строка большими буквами. Сама order не меняется: строки в Python неизменяемые.",
+      viz: (d) => strViz(d.t, (h, c) => c !== " ", "Каждая обведённая буква станет заглавной"), day: () => ({ t: pick(PIZZAS, rint(1, 3)).join(" и ") }), input: (d) => d.t + "\n", answer: (d) => d.t.toUpperCase() },
+    { title: "Аккуратное меню", layer: "И", coins: 15,
+      story: "Стажёр набрал названия пицц как попало: <b>мАРгаРиТА</b>. В меню название пишут с большой буквы, а остальные буквы — маленькие. Исправь название.",
+      inLines: ["Одна строка — название пиццы: одно слово из русских букв в любом регистре."],
+      outp: "Выведите название: первая буква заглавная, остальные строчные.", explain: "«мАРгаРиТА» → «Маргарита».", tl: 3,
+      readMap: [["мАРгаРиТА", "name = input()"]], ri: str1("name"),
+      sample: { t: "мАРгаРиТА" },
+      starter: "name = input()\n# выведи название: первая буква большая, остальные маленькие\n", help: "одну строку пишешь сама",
+      tip: "name.capitalize() — первая буква заглавная, все остальные строчные. Можно и срезами: name[0].upper() + name[1:].lower().",
+      viz: (d) => strViz(d.t, (h, c) => (h === 0 ? c !== c.toUpperCase() : c !== c.toLowerCase()), "Обведены буквы не того размера"),
+      day: () => ({ t: messy(pick(PIZZAS, 1)[0]) }), input: (d) => d.t + "\n", answer: (d) => cap(d.t) },
+    { title: "Имена на коробках", layer: "П", coins: 20,
+      story: "Гости диктуют имя и фамилию, а кассир печатает как попало: <b>иРа пеТРОВА</b>. На коробке каждое слово должно начинаться с большой буквы, а остальные буквы — маленькие.",
+      inLines: ["Одна строка — имя и фамилия гостя: два слова из русских букв в любом регистре через пробел."],
+      outp: "Выведите имя и фамилию: каждое слово с заглавной буквы, остальные буквы строчные.", explain: "«иРа пеТРОВА» → «Ира Петрова».", tl: 3,
+      readMap: [["иРа пеТРОВА", "guest = input()"]], ri: str1("guest"),
+      sample: { t: "иРа пеТРОВА" },
+      starter: "# прочитай имя и фамилию и выведи их аккуратно\n", help: "всю программу пишешь сама",
+      tip: "guest.title() — каждое слово с заглавной буквы, остальные маленькие. А можно разрезать на слова и сделать capitalize() каждому.",
+      viz: (d) => strViz(d.t, (h, c) => c !== " " && (h === 0 || d.t[h - 1] === " " ? c !== c.toUpperCase() : c !== c.toLowerCase()), "Обведены буквы не того размера"),
+      day: () => ({ t: messy(pick(NAMES, 1)[0]) + " " + messy(pick(SURNAMES, 1)[0]) }), input: (d) => d.t + "\n", answer: (d) => d.t.split(" ").map(cap).join(" ") },
+
+    // ── приём 3. Найти и посчитать: count, find, in ──
+    { title: "Острота", layer: "И", coins: 10,
+      story: "Острый заказ помечают звёздочками: чем больше <b>*</b>, тем острее соус. Сколько звёздочек в заказе?",
+      inLines: ["Одна строка — заказ: слова и звёздочки * (до 60 символов)."],
+      outp: "Выведите одно число — сколько звёздочек в заказе.", explain: "Три звёздочки у диабло и одна у пепперони — всего 4.", tl: 3,
+      readMap: [["диабло *** и пепперони *", "order = input()"]], ri: str1("order"),
+      sample: { t: "диабло *** и пепперони *" },
+      starter: "order = input()\nprint(order.count(...))   # что считаем? символ пишется в кавычках\n", help: "код почти готов, допиши одно место",
+      tip: "order.count(\"*\") — сколько раз подстрока встречается в строке.",
+      viz: (d) => strViz(d.t, (h, c) => c === "*", "Обведены звёздочки"),
+      day: () => ({ t: pick(PIZZAS, rint(1, 3)).map((p) => (Math.random() < 0.7 ? p + " " + "*".repeat(rint(1, 4)) : p)).join(" и ") }), input: (d) => d.t + "\n", answer: (d) => String([...d.t].filter((c) => c === "*").length) },
+    { title: "Где сыр", layer: "Ц", coins: 15,
+      story: "Лента заказов — одна длинная строка. Повар ищет, где в ней впервые встречается нужная начинка. Выведи индекс её первой буквы (счёт с нуля). Если начинки нет — <b>-1</b>.",
+      inLines: ["В первой строке — лента заказов: начинки из маленьких русских букв через пробел (до 80 символов).", "Во второй строке — начинка, которую ищем."],
+      outp: "Выведите индекс, с которого начинка впервые встречается в ленте, или -1.", explain: "«томаты» — индексы 0–5, пробел — 6, «грибы» — 7–11, пробел — 12. Первый «сыр» начинается с индекса 13.", tl: 3,
+      readMap: [["томаты грибы сыр перец сыр", "tape = input()"], ["сыр", "word = input()"]],
+      ri: (d) => ({ prog: [{ k: "str", name: "tape", text: d.t }, { k: "str", name: "word", text: d.w }] }),
+      sample: { t: "томаты грибы сыр перец сыр", w: "сыр" },
+      starter: "tape = input()\nword = input()\n# выведи индекс первого вхождения word в tape или -1\n", help: "одну строку пишешь сама",
+      tip: "tape.find(word) — индекс первого вхождения или -1, если не нашлось. А tape.index(word) при неудаче падает с ошибкой.",
+      viz: (d) => { const i = d.t.indexOf(d.w); return strViz(d.t, (h) => i >= 0 && h >= i && h < i + d.w.length, i >= 0 ? "Обведено первое вхождение" : "Такой начинки в ленте нет"); },
+      day: () => { const words = draw(TOPS, rint(3, 8)); return { t: words.join(" "), w: Math.random() < 0.75 ? pick(words, 1)[0] : pick(TOPS.filter((x) => !words.includes(x)), 1)[0] }; },
+      input: (d) => d.t + "\n" + d.w + "\n", answer: (d) => String(d.t.indexOf(d.w)) },
+    { title: "Ананасовый спор", layer: "Ц", coins: 20,
+      story: "Хозяйка спорит с Лёней, любят ли гости ананас. Посчитай, во скольких заказах дня есть <b>ананас</b>.",
+      inLines: ["В первой строке — число N (1 ≤ N ≤ 20): сколько заказов.", "Дальше N строк — заказы: начинки из маленьких русских букв через пробел."],
+      outp: "Выведите одно число — в скольких заказах есть ананас.", explain: "Ананас есть в 1-м и 3-м заказах — ответ 2.", tl: 3,
+      readMap: [["4", "orders = int(input())"], ["гавайская ананас ветчина", "order = input() — в цикле, orders раз"]],
+      ri: (d) => ({ prog: [{ k: "int", name: "orders", text: String(d.rows.length) }, { k: "loop", v: "i", n: "orders", body: { k: "str", name: "order", texts: d.rows } }] }),
+      sample: { rows: ["гавайская ананас ветчина", "маргарита", "сыр ананас", "пепперони"] },
+      starter: "# вход: сколько заказов, потом заказы по одному в строке. Имена: orders, order, with_pineapple\n", help: "всю программу пишешь сама",
+      tip: "\"ананас\" in order — True, если в строке есть «ананас». Каждый заказ читай своим input() в цикле, а совпадения считай копилкой.",
+      viz: (d) => linesViz(d.rows, (r) => r.includes("ананас"), "Обведены заказы с ананасом"),
+      day: () => ({ rows: Array.from({ length: rint(2, 8) }, () => { const w = pick(TOPS.filter((x) => x !== "ананас"), rint(1, 4)); if (Math.random() < 0.4) w.splice(rint(0, w.length), 0, "ананас"); return w.join(" "); }) }),
+      input: (d) => d.rows.length + "\n" + d.rows.join("\n") + "\n", answer: (d) => String(d.rows.filter((r) => r.includes("ананас")).length) },
+
+    // ── приём 4. Замена: replace ──
+    { title: "Опечатка в меню", layer: "А", coins: 10,
+      story: "Стажёр напечатал меню с ошибкой: кое-где <b>пица</b> вместо <b>пицца</b>. Исправь все опечатки.",
+      inLines: ["Одна строка — текст меню из маленьких русских букв и пробелов (до 80 символов)."],
+      outp: "Выведите текст, где каждое «пица» заменено на «пицца».", explain: "Обе «пица» стали «пицца». Правильные слова не тронуты.", tl: 3,
+      readMap: [["пица маргарита и пица пепперони", "menu = input()"]], ri: str1("menu"),
+      sample: { t: "пица маргарита и пица пепперони" },
+      starter: "menu = input()\nfixed = menu.replace(..., ...)   # что заменить и на что — две строки в кавычках\nprint(fixed)\n", help: "код почти готов, допиши одно место",
+      tip: "menu.replace(\"пица\", \"пицца\") заменяет все вхождения сразу. Сама menu не меняется — результат кладём в fixed.",
+      viz: (d) => strViz(d.t, inAny(d.t, "пица"), "Обведены опечатки"),
+      day: () => ({ t: pick(PIZZAS, rint(1, 4)).map((p) => (Math.random() < 0.6 ? "пица " : "пицца ") + p).join(" и ") }), input: (d) => d.t + "\n", answer: (d) => d.t.split("пица").join("пицца") },
+    { title: "Телефон без пробелов", layer: "К", coins: 15,
+      story: "Гости диктуют телефон с пробелами и дефисами: <b>+7 900-123-45-67</b>. Приложению курьеров нужны только плюс и цифры. Убери пробелы и дефисы.",
+      inLines: ["Одна строка — телефон: плюс, цифры, пробелы и дефисы."],
+      outp: "Выведите телефон без пробелов и дефисов.", explain: "Остались только «+» и цифры: +79001234567.", tl: 3,
+      readMap: [["+7 900-123-45-67", "phone = input()"]], ri: str1("phone"),
+      sample: { t: "+7 900-123-45-67" },
+      starter: "phone = input()\n# убери пробелы и дефисы — replace можно вызвать два раза подряд\n", help: "замены пишешь сама",
+      tip: "phone.replace(\" \", \"\") убирает пробелы: заменяет их пустой строкой. Потом так же дефисы — можно цепочкой: phone.replace(…).replace(…).",
+      viz: (d) => strViz(d.t, (h, c) => c === " " || c === "-", "Обведено то, что надо убрать"),
+      day: () => { const parts = ["+7", String(rint(900, 999)), String(rint(100, 999)), String(rint(10, 99)), String(rint(10, 99))]; return { t: parts.map((p, i) => (i ? [" ", "-", " - ", ""][rint(0, 3)] : "") + p).join("") }; },
+      input: (d) => d.t + "\n", answer: (d) => d.t.replace(/[ -]/g, "") },
+    { title: "Замена начинки", layer: "О", coins: 20,
+      story: "Гость просит заменить одну начинку на другую во всём заказе. Даны заказ, начинка, которую убираем, и начинка, которую кладём вместо неё. Выведи новый заказ.",
+      inLines: ["В первой строке — заказ: начинки через пробел (до 80 символов).", "Во второй — начинка, которую убираем.", "В третьей — начинка, которую кладём вместо неё."],
+      outp: "Выведите заказ после замены.", explain: "Оба «лук» стали «грибы».", tl: 3,
+      readMap: [["сыр лук томаты лук", "order = input()"], ["лук", "old_topping = input()"], ["грибы", "new_topping = input()"]],
+      ri: (d) => ({ prog: [{ k: "str", name: "order", text: d.t }, { k: "str", name: "old_topping", text: d.a }, { k: "str", name: "new_topping", text: d.b }] }),
+      sample: { t: "сыр лук томаты лук", a: "лук", b: "грибы" },
+      starter: "# три строки входа: order, old_topping, new_topping — и одна замена\n", help: "всю программу пишешь сама",
+      tip: "order.replace(old_topping, new_topping) — все вхождения сразу.",
+      viz: (d) => strViz(d.t, inAny(d.t, d.a), "Обведено то, что заменим"),
+      day: () => { const w = draw(TOPS, rint(2, 7)); return { t: w.join(" "), a: Math.random() < 0.85 ? pick(w, 1)[0] : pick(TOPS.filter((x) => !w.includes(x)), 1)[0], b: pick(TOPS, 1)[0] }; },
+      input: (d) => `${d.t}\n${d.a}\n${d.b}\n`, answer: (d) => d.t.split(d.a).join(d.b) },
+
+    // ── приём 5. Слова: split и join ──
+    { title: "Сколько начинок", layer: "К", coins: 10,
+      story: "Чем больше начинок, тем дороже пицца. Посчитай, сколько начинок в заказе. Стажёр иногда ставит между словами по нескольку пробелов.",
+      inLines: ["Одна строка — начинки через пробелы (от 1 до 15 слов). Между словами бывает несколько пробелов подряд."],
+      outp: "Выведите одно число — сколько начинок.", explain: "Слов три, хотя пробелов больше: split() режет по любому количеству пробелов.", tl: 3,
+      readMap: [["сыр  томаты   базилик", "toppings = input().split()"]], ri: (d) => ({ prog: [{ k: "words", name: "toppings", text: d.t }] }),
+      sample: { t: "сыр  томаты   базилик" },
+      starter: "toppings = input().split()   # split() режет по пробелам — сколько бы их ни было подряд\nprint(...)\n", help: "код почти готов, допиши одно место",
+      tip: "len(toppings) — сколько слов в списке. split() без аргументов пустых слов не делает, а split(\" \") — делает: проверь сама.",
+      viz: (d) => strViz(d.t, (h, c) => c === " ", "Обведены пробелы — по ним режет split()"),
+      day: () => ({ t: draw(TOPS, rint(1, 9)).map((w, i) => (i ? " ".repeat(rint(1, 3)) : "") + w).join("") }), input: (d) => d.t + "\n", answer: (d) => String(d.t.trim().split(/\s+/).length) },
+    { title: "Чек через запятую", layer: "О", coins: 15,
+      story: "В чеке начинки пишут через запятую с пробелом: <b>сыр, томаты, базилик</b>. Переделай заказ для чека.",
+      inLines: ["Одна строка — начинки через пробел (от 1 до 15 слов)."],
+      outp: "Выведите начинки через запятую и пробел.", explain: "Между словами вместо пробела — «, ». После последнего слова запятой нет.", tl: 3,
+      readMap: [["сыр томаты базилик", "toppings = input().split()"]], ri: (d) => ({ prog: [{ k: "words", name: "toppings", text: d.t }] }),
+      sample: { t: "сыр томаты базилик" },
+      starter: "toppings = input().split()\n# склей слова списка через \", \" — метод join у строки-разделителя\n", help: "одну строку пишешь сама",
+      tip: "\", \".join(toppings) склеивает элементы списка, ставя между ними \", \". Разделитель — строка, у которой вызываем join.",
+      viz: (d) => strViz(d.t, (h, c) => c === " ", "Каждый пробел станет «, »"),
+      day: () => ({ t: draw(TOPS, rint(1, 8)).join(" ") }), input: (d) => d.t + "\n", answer: (d) => d.t.split(" ").join(", ") },
+    { title: "Самая длинная начинка", layer: "И", coins: 20,
+      story: "Для рекламы выбирают начинку с самым длинным названием. Выведи самое длинное слово заказа. Если таких несколько — то, что встретилось раньше.",
+      inLines: ["Одна строка — начинки через пробел (от 1 до 15 слов)."],
+      outp: "Выведите самое длинное слово.", explain: "В «моцарелла» и «халапеньо» по 9 букв, но «моцарелла» встретилась раньше.", tl: 3,
+      readMap: [["сыр моцарелла базилик халапеньо", "toppings = input().split()"]], ri: (d) => ({ prog: [{ k: "words", name: "toppings", text: d.t }] }),
+      sample: { t: "сыр моцарелла базилик халапеньо" },
+      starter: "# раздели заказ на слова и найди самое длинное (при равенстве — первое)\n", help: "всю программу пишешь сама",
+      tip: "Копилка longest = \"\": для каждого слова, если len(word) > len(longest), запомни его. Строгое > оставит первое из равных. А можно max(toppings, key=len).",
+      viz: (d) => { const w = d.t.split(" ").reduce((b, x) => (x.length > b.length ? x : b), ""), i = (" " + d.t + " ").indexOf(" " + w + " "); return strViz(d.t, (h) => h >= i && h < i + w.length, "Обведено самое длинное слово"); },
+      day: () => ({ t: draw(TOPS, rint(1, 8)).join(" ") }), input: (d) => d.t + "\n", answer: (d) => d.t.split(" ").reduce((b, x) => (x.length > b.length ? x : b), "") },
+
+    // ── приём 6. Проверки: isdigit, startswith, палиндром ──
+    { title: "Номер квартиры", layer: "С", coins: 10,
+      story: "Курьер вводит номер квартиры в приложение. Номер правильный, только если в нём одни цифры. Выведи <b>ДА</b>, если номер правильный, иначе <b>НЕТ</b>.",
+      inLines: ["Одна строка — то, что ввёл курьер: от 1 до 6 символов без пробелов."],
+      outp: "Выведите ДА или НЕТ.", explain: "В «12б» есть буква — значит, НЕТ. А «125» — только цифры, было бы ДА.", tl: 3,
+      readMap: [["12б", "flat = input()"]], ri: str1("flat"),
+      sample: { t: "12б" },
+      starter: "flat = input()\nif ...:            # метод строки: только ли цифры?\n    print(\"ДА\")\nelse:\n    print(\"НЕТ\")\n", help: "код почти готов, допиши одно место",
+      tip: "flat.isdigit() — True, если строка не пустая и в ней одни цифры.",
+      viz: (d) => strViz(d.t, (h, c) => !/[0-9]/.test(c), "Обведено то, что не цифра"),
+      day: () => { const n = String(rint(1, 999)); return { t: Math.random() < 0.5 ? n : [n + "абвк"[rint(0, 3)], n + "-" + rint(1, 9), "кв" + n, n.slice(0, 1) + "о" + n.slice(1)][rint(0, 3)] }; },
+      input: (d) => d.t + "\n", answer: (d) => (/^[0-9]+$/.test(d.t) ? "ДА" : "НЕТ") },
+    { title: "Промокоды", layer: "Т", coins: 15,
+      story: "Промокод сети начинается с <b>PIZZA</b> латинскими буквами. Для каждого кода, который ввели гости, выведи <b>ДА</b>, если он начинается с PIZZA, иначе <b>НЕТ</b>.",
+      inLines: ["В первой строке — число N (1 ≤ N ≤ 10): сколько кодов.", "Дальше N строк — коды: латинские буквы и цифры без пробелов."],
+      outp: "Выведите N строк: ДА или НЕТ.", explain: "PIZZA10 — ДА. PIZA5 — ошибка в слове. FREEPIZZA содержит PIZZA, но начинается не с него.", tl: 3,
+      readMap: [["3", "codes = int(input())"], ["PIZZA10", "code = input() — в цикле, codes раз"]],
+      ri: (d) => ({ prog: [{ k: "int", name: "codes", text: String(d.rows.length) }, { k: "loop", v: "i", n: "codes", body: { k: "str", name: "code", texts: d.rows } }] }),
+      sample: { rows: ["PIZZA10", "PIZA5", "FREEPIZZA"] },
+      starter: "codes = int(input())\nfor i in range(codes):\n    code = input()\n    # начинается ли code с \"PIZZA\"? выведи ДА или НЕТ\n", help: "проверку пишешь сама",
+      tip: "code.startswith(\"PIZZA\") — True, если строка начинается с этих символов. Срезом тоже можно: code[:5] == \"PIZZA\".",
+      viz: (d) => linesViz(d.rows, (r) => r.startsWith("PIZZA"), "Обведены настоящие промокоды"),
+      day: () => ({ rows: Array.from({ length: rint(2, 7) }, () => [() => "PIZZA" + rint(1, 99), () => "PIZA" + rint(1, 9), () => "FREEPIZZA", () => "pizza" + rint(1, 9), () => "PIZZA", () => "IRA" + rint(10, 99), () => "PIZZAIRA"][rint(0, 6)]()) }),
+      input: (d) => d.rows.length + "\n" + d.rows.join("\n") + "\n", answer: (d) => d.rows.map((r) => (r.startsWith("PIZZA") ? "ДА" : "НЕТ")).join("\n") },
+    { title: "Зеркальный заказ", layer: "Р", coins: 20,
+      story: "Лёня придумал игру: слово «зеркальное», если читается одинаково слева направо и справа налево, не считая больших и маленьких букв. Например, <b>Заказ</b>. Проверь слово: выведи <b>ДА</b> или <b>НЕТ</b>.",
+      inLines: ["Одна строка — одно слово из русских букв в любом регистре (от 1 до 20 букв)."],
+      outp: "Выведите ДА, если слово зеркальное, иначе НЕТ.", explain: "«Заказ» маленькими буквами — «заказ», задом наперёд — тоже «заказ». Значит, ДА.", tl: 3,
+      readMap: [["Заказ", "word = input()"]], ri: str1("word"),
+      sample: { t: "Заказ" },
+      starter: "# прочитай слово, сделай все буквы маленькими и сравни его с ним же задом наперёд\n", help: "всю программу пишешь сама",
+      tip: "word = input().lower(), а потом сравни word == word[::-1].",
+      viz: (d) => strViz(d.t, (h, c) => c.toLowerCase() !== d.t[d.t.length - 1 - h].toLowerCase(), "Обведены буквы, у которых пара в зеркале другая"),
+      day: () => ({ t: Math.random() < 0.5 ? cap(pick(MIRROR, 1)[0]) : messy(pick(MIRROR.concat(PIZZAS, TOPS), 1)[0]) }), input: (d) => d.t + "\n",
+      answer: (d) => { const w = d.t.toLowerCase(); return w === [...w].reverse().join("") ? "ДА" : "НЕТ"; } },
+
+    // ── босс ──
+    { title: "Босс: лента кассы", layer: "!", coins: 150, boss: true,
+      story: "Касса печатает начинку каждой пиццы одной буквой: с — сыр, г — грибы, т — томаты… За день набегает лента до 100 000 букв, и бумага кончается. Сожми ленту: каждую серию одинаковых букв подряд замени буквой и числом — сколько раз она повторилась подряд. Например, <b>сссггт</b> → <b>с3г2т1</b>.",
+      inLines: ["Одна строка — лента: маленькие русские буквы без пробелов (от 1 до 100 000 букв)."],
+      outp: "Выведите сжатую ленту: для каждой серии одинаковых букв подряд — буква и длина серии, всё слитно.",
+      explain: "Серии: ссс, т, гггг, с. Последняя «с» — новая серия, а не продолжение первой.", tl: 6,
+      readMap: [["ссстггггс", "tape = input()"]], ri: str1("tape"),
+      sample: { t: "ссстггггс" },
+      starter: "# босс: вся программа твоя. Имена — понятные: tape, parts, letter, count\n", help: "босс: пустой лист",
+      tip: "Иди по ленте и считай, сколько раз подряд идёт текущая буква. Буква сменилась — допиши прошлую букву и счётчик и начни счёт заново. Не забудь последнюю серию после цикла. Части удобно копить в списке parts и в конце склеить: \"\".join(parts).",
+      slow: "Слишком долго. Копи части в списке и склей их один раз в конце: \"\".join(parts).",
+      bigLabel: () => "100 000 букв ленты", bigWait: "Касса печатает, программа сжимает…",
+      viz: (d) => strViz(d.t, (h, c) => h === 0 || d.t[h - 1] !== c, "Обведены начала серий"),
+      day: (big) => { const n = big ? 100000 : rint(4, 24), L = "сгтплб"; let t = "", prev = ""; while (t.length < n) { let c; do c = L[rint(0, L.length - 1)]; while (c === prev); t += c.repeat(Math.min(n - t.length, rint(1, big ? 12 : 4))); prev = c; } return { t, big }; },
+      input: (d) => d.t + "\n", answer: (d) => { let r = "", i = 0; while (i < d.t.length) { let j = i; while (j < d.t.length && d.t[j] === d.t[i]) j++; r += d.t[i] + (j - i); i = j; } return r; } },
+  ];
+  const SIGN_ROWS = ["ИРА ПИЦЦА КОИН", "СТРОКИ"], BULBS = SIGN_ROWS.join("").replace(/ /g, "");
+  S5.forEach((o, k) => { o.layer = k < BULBS.length ? `Лампочка «${BULBS[k]}»` : "Вывеска горит"; });
+
+  // Серии 1–3 идут по очереди: следующая открывается, когда пройдена предыдущая. Серия с free: true открыта сразу, у неё свой счётчик.
   const SERIES = [
     { tab: "Пицца", orders: S1, intro: "Пиццерия открывается. Повар записывает на ленту, сколько пицц испёк за каждый час, — из этой ленты мы соберём <b>табло</b>.",
       zero: "Тесто раскатано", cap: "Начинка: ", doneCap: "Пицца готова!", wait: "Откроется, когда пицца выйдет из печи.", nextH: "В следующей серии",
@@ -1035,14 +1539,41 @@ window.ReadInput = (function () {
       next: "Хозяйка купила скутеры — у пиццерии своя доставка. Курьеры уходят на смены, акции идут волнами, и диспетчеру нужно знать, сколько скутеров на дороге в каждый час. Табло умеет складывать, а в следующей серии научимся делать наоборот." },
     { tab: "Доставка", orders: S3, intro: "У пиццерии своя доставка на скутерах. Курьеры работают сменами, а диспетчер учится ставить на ленту метки <b>+1 и −1</b> — это табло наоборот.",
       zero: "Скутеры в гараже", cap: "Доставка: ", doneCap: "Всё доставлено!", wait: "Откроется, когда все пиццы будут доставлены.", nextH: "Конец сезона",
-      next: "Сезон закончен! Ты строишь табло на ленте и на карте и ставишь метки +1 и −1 — с этим решают настоящие олимпиадные задачи. Новые серии — на занятиях." },
+      next: "Сезон табло закончен! Ты строишь табло на ленте и на карте и ставишь метки +1 и −1 — с этим решают настоящие олимпиадные задачи. А в сериях «Вывеска» и «Склад» — строки и множества." },
+    { tab: "Вывеска", orders: S5, free: true,
+      intro: "Вывеска и касса. <b>Строка</b> — ряд символов с номерами-индексами: <code>s[0]</code> — первый, <code>s[-1]</code> — последний, <code>s[2:5]</code> — кусок. У строки много методов: <code>upper</code>, <code>count</code>, <code>replace</code>, <code>split</code>… Эта серия открыта сразу. Каждый приём — в трёх заказах подряд: сначала почти готовый код, потом половина, потом твоя программа.",
+      zero: "Вывеска пока тёмная", capOf: (p) => `Лампочек горит: ${p}`, doneCap: "Вывеска горит!", wait: "Откроется, когда загорится вся вывеска.", nextH: "Конец серии",
+      next: "Ты умеешь строки: индексы и срезы, upper и lower, count и find, replace, split и join, проверки isdigit и startswith, палиндромы. Дальше — серия «Склад»: множества." },
+    { tab: "Склад", orders: S4, free: true,
+      intro: "Склад начинок. <b>Множество</b> (set) — мешок, в котором каждая вещь лежит один раз: повторы выбрасываются сами, а проверка «есть ли» — мгновенная. Эта серия открыта сразу. Каждый приём — в трёх заказах подряд: сначала почти готовый код, потом половина, потом твоя программа.",
+      zero: "Круги пока пустые", capOf: (p) => `Начинок на кругах: ${p}`, doneCap: "Склад разобран!", wait: "Откроется, когда все начинки лягут на круги.", nextH: "Конец серии",
+      next: "Ты умеешь множества: set без повторов, sorted для порядка, in для «было ли», & — общее, - — чего не хватает, | — всё вместе, ^ — только у одного. Новые серии — на занятиях." },
   ];
   const ORDERS = [];
   SERIES.forEach((S, s) => S.orders.forEach((o, k) => { o.s = s; o.k = k; ORDERS.push(o); }));
   const START = SERIES.map((S, s) => ORDERS.findIndex((o) => o.s === s));
-  const prog = (s) => Math.max(0, Math.min(SERIES[s].orders.length, done - START[s]));   // сколько заказов серии готово
+  const CHAIN = ORDERS.filter((o) => !SERIES[o.s].free).length;   // заказы серий, которые идут по очереди (свободные — в конце)
+  // сколько заказов серии готово: у цепочки — общий счётчик done, у свободной серии — свой
+  const prog = (s) => SERIES[s].free ? Math.min(SERIES[s].orders.length, freeDone[s] | 0) : Math.max(0, Math.min(SERIES[s].orders.length, done - START[s]));
+  const isDone = (i) => (SERIES[ORDERS[i].s].free ? ORDERS[i].k < prog(ORDERS[i].s) : i < done);
+  const isOpen = (i) => (SERIES[ORDERS[i].s].free ? ORDERS[i].k === prog(ORDERS[i].s) : i === done);
   const sampleIn = (o) => o.input(o.sample);
 
+  // Skulpt не знает русских букв в title, swapcase, isalpha, isalnum, isupper, islower, istitle — чиним, чтобы работало как в настоящем Python.
+  function fixStrMethods(Sk) {
+    const P = Sk.builtin.str.prototype, str = (v) => new Sk.builtin.str(v), bool = (b) => (b ? Sk.builtin.bool.true$ : Sk.builtin.bool.false$);
+    const cased = (c) => c.toLowerCase() !== c.toUpperCase(), isUp = (c) => cased(c) && c === c.toUpperCase(), isLow = (c) => cased(c) && c === c.toLowerCase();
+    const fix = {
+      title() { let out = "", prev = false; for (const c of this.v) { if (cased(c)) { out += prev ? c.toLowerCase() : c.toUpperCase(); prev = true; } else { out += c; prev = false; } } return str(out); },
+      swapcase() { return str([...this.v].map((c) => (isUp(c) ? c.toLowerCase() : isLow(c) ? c.toUpperCase() : c)).join("")); },
+      isalpha() { return bool(/^\p{L}+$/u.test(this.v)); },
+      isalnum() { return bool(/^[\p{L}\p{N}]+$/u.test(this.v)); },
+      isupper() { const cs = [...this.v].filter(cased); return bool(cs.length > 0 && cs.every(isUp)); },
+      islower() { const cs = [...this.v].filter(cased); return bool(cs.length > 0 && cs.every(isLow)); },
+      istitle() { let prev = false, any = false; for (const c of this.v) { if (isUp(c)) { if (prev) return bool(false); prev = any = true; } else if (isLow(c)) { if (!prev) return bool(false); any = true; } else prev = false; } return bool(any); },
+    };
+    for (const [name, f] of Object.entries(fix)) { const d = P[name]; if (d && d.$meth) { d.$meth = f; if (d.d$def) d.d$def.$meth = f; } }
+  }
   // ---------- Python в браузере (Skulpt) ----------
   let pyReady = false;
   function runPy(code, input, limitMs) {
@@ -1134,10 +1665,10 @@ window.ReadInput = (function () {
 
   // ---------- прогресс и код сохраняются в браузере, если можно ----------
   const KEY = "pizzacoin-v6";
-  let saved = { done: 0, code: {}, stars: {} };
+  let saved = { done: 0, code: {}, stars: {}, free: {} };
   try { saved = Object.assign(saved, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) { /* без хранилища */ }
-  let done = Math.min(ORDERS.length, saved.done | 0);
-  function save() { try { localStorage.setItem(KEY, JSON.stringify({ done, code: saved.code, stars: saved.stars })); } catch (e) { /* ничего */ } }
+  let done = Math.min(CHAIN, saved.done | 0), freeDone = Object.assign({}, saved.free);
+  function save() { try { localStorage.setItem(KEY, JSON.stringify({ done, code: saved.code, stars: saved.stars, free: freeDone, view })); } catch (e) { /* ничего */ } }
 
   // ---------- заказы ----------
   // ---------- редактор: подсветка, подсказки при наборе, Tab как в PyCharm ----------
@@ -1146,6 +1677,7 @@ window.ReadInput = (function () {
     ["len", "len()", "длина"], ["range", "range()", "числа подряд"], ["list", "list()", "сделать список"], ["map", "map()", "к каждому: map(int, …)"],
     ["max", "max()", "наибольшее"], ["min", "min()", "наименьшее"], ["sum", "sum()", "сумма списка"], ["abs", "abs()", "модуль"], ["sorted", "sorted()", "отсортировать"],
     ["enumerate", "enumerate()", "номер и элемент"], ["split", "split()", "разрезать по пробелам"], ["append", "append()", "добавить в конец"],
+    ["set", "set()", "множество"], ["add", "add()", "положить в множество"], ["discard", "discard()", "убрать из множества"], ["join", "join()", "склеить строки"],
     ["if", "if ", "если"], ["elif", "elif ", "иначе если"], ["else", "else:", "иначе"], ["for", "for ", "цикл по элементам"], ["while", "while ", "пока"],
     ["break", "break", "выйти из цикла"], ["continue", "continue", "к следующему шагу"], ["in", "in ", "в / по"], ["and", "and ", "и"], ["or", "or ", "или"], ["not", "not ", "не"],
     ["True", "True", "истина"], ["False", "False", "ложь"], ["def", "def ", "функция"], ["return", "return ", "вернуть"],
@@ -1154,6 +1686,8 @@ window.ReadInput = (function () {
     ["list(map(int, input().split()))", "list(map(int, input().split()))", "список чисел из строки"],
     ["map(int, input().split())", "map(int, input().split())", "несколько чисел из строки"],
     ["int(input())", "int(input())", "одно число"],
+    ["set(input().split())", "set(input().split())", "множество слов из строки"],
+    ["set(map(int, input().split()))", "set(map(int, input().split()))", "множество чисел из строки"],
   ];
   function pyHint(cm) {
     const cur = cm.getCursor(), line = cm.getLine(cur.line);
@@ -1352,7 +1886,8 @@ window.ReadInput = (function () {
       el.classList.toggle("starred", !!saved.stars[i]);
     }
     if (allOk) {
-      if (i + 1 > done) { done = i + 1; save(); render(true); } else shake = 0;
+      if (SERIES[o.s].free) { if (o.k + 1 > prog(o.s)) { freeDone[o.s] = o.k + 1; save(); render(true); } else shake = 0; }
+      else if (i + 1 > done) { done = i + 1; save(); render(true); } else shake = 0;
     } else shake = 1;
   }
   // sum( в коде, не считая комментариев и строк
@@ -1360,7 +1895,7 @@ window.ReadInput = (function () {
     const clean = code.split("\n").map((l) => l.replace(/(["'])(?:\\.|(?!\1).)*\1/g, '""').replace(/#.*$/, "")).join("\n");
     return /\bsum\s*\(/.test(clean);
   }
-  const walletTotal = () => ORDERS.slice(0, done).reduce((s, o) => s + o.coins, 0) + 5 * Object.keys(saved.stars || {}).length;
+  const walletTotal = () => ORDERS.reduce((s, o, i) => s + (isDone(i) ? o.coins : 0), 0) + 5 * Object.keys(saved.stars || {}).length;
   const short = (s) => (s.length > 60 ? s.slice(0, 60) + "…" : s);
 
   // ---------- серии: вкладки, какая открыта, финал каждой ----------
@@ -1368,17 +1903,21 @@ window.ReadInput = (function () {
     () => { const hot = new Set([10, 11, 18, 19, 20, 26, 27, 28]); return Array.from({ length: 40 }, (_, k) => `<span${hot.has(k) ? ' class="hot"' : ""}>${(k * 7 + 3) % 10}</span>`).join(""); },
     () => ["+1", "0", "0", "−1", "+1", "+1", "0", "−1", "0", "+1", "−1", "−1", "0", "+1", "0", "−1"].map((x) => `<span${x === "0" ? "" : ' class="hot"'}>${x}</span>`).join(""),
     () => "",
+    () => [..."ИРА ПИЦЦА КОИН!!"].map((c) => `<span${c === " " ? "" : ' class="hot"'}>${c === " " ? "" : c}</span>`).join(""),
+    () => ["сыр", "лук", "сыр", "грибы", "лук", "сыр"].map((x, k, a) => `<span${a.indexOf(x) < k ? "" : ' class="hot"'}>${x}</span>`).join(""),
   ];
-  const opened = (s) => done >= START[s];
+  const opened = (s) => SERIES[s].free || done >= START[s];
   const finished = (s) => prog(s) === SERIES[s].orders.length;
-  let view = done < ORDERS.length ? ORDERS[done].s : SERIES.length - 1;   // открываем серию, где сейчас идёт работа
+  // открываем серию, которую смотрели в прошлый раз; если такой нет — новую свободную серию, иначе ту, где идёт работа
+  const firstFree = SERIES.findIndex((S, s) => S.free && !finished(s));
+  let view = saved.view != null && SERIES[saved.view] && opened(saved.view) ? saved.view : firstFree >= 0 ? firstFree : done < CHAIN ? ORDERS[done].s : CHAIN ? ORDERS[CHAIN - 1].s : 0;
   SERIES.forEach((S, s) => {
     const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "tab");
     b.addEventListener("click", () => showSeries(s)); $("series").appendChild(b);
   });
   function showSeries(s) {
     if (!opened(s) || s === view) return;
-    view = s; render(false);
+    view = s; save(); render(false);
     editors.forEach((ed, i) => { if (ORDERS[i].s === s) ed.refresh(); });   // редактор, который был спрятан, надо перемерить
   }
   $("next-series").addEventListener("click", () => { showSeries(view + 1); $("series").scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" }); });
@@ -1395,30 +1934,32 @@ window.ReadInput = (function () {
     document.querySelectorAll(".ticket").forEach((el, i) => {
       el.hidden = ORDERS[i].s !== view;
       const st = el.querySelector(".t-state");
-      el.classList.toggle("done", i < done); el.classList.toggle("locked", i > done);
-      st.className = "t-state " + (i < done ? "st-done" : i === done ? "st-open" : "st-lock");
-      st.textContent = i < done ? "готов" : i === done ? "в работе" : "закрыт";
+      const d = isDone(i), op = isOpen(i);
+      el.classList.toggle("done", d); el.classList.toggle("locked", !d && !op);
+      st.className = "t-state " + (d ? "st-done" : op ? "st-open" : "st-lock");
+      st.textContent = d ? "готов" : op ? "в работе" : "закрыт";
     });
     const coins = walletTotal();
     animate ? countTo(coins) : ($("wallet").textContent = walletShown = coins);
-    $("layer-cap").textContent = p === 0 ? S.zero : p < n ? S.cap + S.orders.slice(0, p).map((o) => o.layer.toLowerCase()).join(", ") : S.doneCap;
+    $("layer-cap").textContent = p === 0 ? S.zero : p < n ? (S.capOf ? S.capOf(p) : S.cap + S.orders.slice(0, p).map((o) => o.layer.toLowerCase()).join(", ")) : S.doneCap;
     $("step-cap").textContent = p < n ? `Заказ ${p + 1} из ${n}` : "Все заказы выполнены";
     $("finale").classList.toggle("locked", !fin);
     $("finale-h").textContent = S.nextH;
     $("finale-text").textContent = fin ? S.next : S.wait;
     const deco = DECO[view]();
-    $("city").innerHTML = deco; $("city").hidden = !deco; $("city").classList.toggle("tape", view === 1);
+    $("city").innerHTML = deco; $("city").hidden = !deco; $("city").classList.toggle("tape", view >= 1 && view !== 2);
     const nb = $("next-series"), more = view + 1 < SERIES.length;
     nb.hidden = !(fin && more); nb.textContent = more ? `Смотреть серию ${view + 2}: ${SERIES[view + 1].tab} →` : "";
     if (animate) { target = Math.min(done, S1.length); drop = 0; if (done === S1.length) bake = 0.0001; }
-    if (animate && done < ORDERS.length && ORDERS[done].s === view && !holdScroll) setTimeout(() => $("order-" + (done + 1)).scrollIntoView({ behavior: "smooth", block: "start" }), 1400);
+    const nextI = ORDERS.findIndex((o, i) => o.s === view && isOpen(i));
+    if (animate && nextI >= 0 && !holdScroll) setTimeout(() => $("order-" + (nextI + 1)).scrollIntoView({ behavior: "smooth", block: "start" }), 1400);
   }
   let walletShown = 0, holdScroll = false;
   function countTo(v) { const from = walletShown, t0 = performance.now();
     const step = (t) => { const k = Math.min(1, (t - t0) / 900); walletShown = Math.round(from + (v - from) * k); $("wallet").textContent = walletShown; if (k < 1) requestAnimationFrame(step); };
     requestAnimationFrame(step); }
   $("reset").addEventListener("click", () => {
-    done = 0; saved.code = {}; saved.stars = {}; save(); shown = 0; target = 0; bake = 0; view = 0;
+    done = 0; freeDone = {}; saved.code = {}; saved.stars = {}; view = 0; save(); shown = 0; target = 0; bake = 0;
     anim.forEach((A) => { if (A) { A.shown = 0; A.drop = 1; } });
     setTimeout(() => editors.forEach((ed, i) => { if (ORDERS[i].s === 0) ed.refresh(); }), 0);
     editors.forEach((ed, i) => ed.setValue(ORDERS[i].starter));
@@ -1429,7 +1970,7 @@ window.ReadInput = (function () {
   // ---------- сцена: печь и пицца на лопате ----------
   const cv = $("scene"), g = cv.getContext("2d"), W = cv.width, H = cv.height;
   let shown = Math.min(done, S1.length), target = shown, drop = 1, bake = done >= S1.length ? 1 : 0, shake = 0, tick = 0;
-  const anim = [null, { shown: prog(1), drop: 1 }, { shown: prog(2), drop: 1 }];   // слои сцен 2-й и 3-й серии
+  const anim = [null, { shown: prog(1), drop: 1 }, { shown: prog(2), drop: 1 }, { shown: prog(3), drop: 1 }, { shown: prog(4), drop: 1 }];   // слои сцен 2–5-й серии
   function rng(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   const rnd = rng(7);
   const pep = Array.from({ length: 11 }, () => { const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * 78; return [Math.cos(a) * r, Math.sin(a) * r * 0.55]; });
@@ -1569,12 +2110,97 @@ window.ReadInput = (function () {
     if (a(5)) banner("ВСЁ ДОСТАВЛЕНО!", a(5), 712, 206);
   }
 
+  // ---------- сцена серии «Вывеска»: каждый заказ зажигает лампочку-букву ----------
+  // Под первой строкой вывески — индексы, как у строки в Python. Пройден приём — внизу появляется его строчка кода.
+  const SIGN_CODE = [
+    [3, 'sign[::-1]', '"НИОК АЦЦИП АРИ"'], [6, 'sign.lower()', '"ира пицца коин"'], [9, 'sign.count("И")', "3"],
+    [12, 'sign.replace("КОИН", "COIN")', '"ИРА ПИЦЦА COIN"'], [15, "sign.split()", "['ИРА', 'ПИЦЦА', 'КОИН']"], [18, 'sign.startswith("ИРА")', "True"],
+  ];
+  function signFrame() {
+    const p = prog(3), a = layers(anim[3], p, 480, 110), boss = a(19);
+    g.fillStyle = "#1F2A33"; g.fillRect(0, 0, W, H);
+    g.fillStyle = "#3A2E26"; rr(24, 10, W - 48, 182, 16); g.fill(); g.strokeStyle = "#5A4636"; g.lineWidth = 4; g.stroke();
+    g.textAlign = "center"; g.textBaseline = "middle";
+    let k = 0;
+    SIGN_ROWS.forEach((row, r) => {
+      const TW = 54, TG = 8, x0 = (W - (row.length * (TW + TG) - TG)) / 2, y = r ? 116 : 22, TH = 60;
+      [...row].forEach((c, i) => {
+        const x = x0 + i * (TW + TG);
+        if (r === 0) { g.fillStyle = "#9C9384"; g.font = `12px ${MONO}`; g.fillText(i, x + TW / 2, y + TH + 12); }      // индекс символа
+        if (c === " ") return;
+        const t = a(++k), blink = boss ? 0.75 + 0.25 * Math.sin(tick / 4 + i) : 1;
+        g.fillStyle = "#4A3F36"; rr(x, y, TW, TH, 10); g.fill();
+        if (t) { g.save(); g.globalAlpha = t * blink; g.shadowColor = "#F4C542"; g.shadowBlur = 22; g.fillStyle = "#F4C542"; rr(x, y, TW, TH, 10); g.fill(); g.restore(); }
+        g.font = "34px 'Rubik Mono One', Impact, sans-serif"; g.fillStyle = t ? "#23201C" : "#6B5F55"; g.globalAlpha = t ? Math.max(0.35, t) : 1; g.fillText(c, x + TW / 2, y + TH / 2 + 2); g.globalAlpha = 1;
+      });
+    });
+    // строчки кода пройденных приёмов
+    g.textAlign = "left"; g.font = `15px ${MONO}`; g.fillStyle = "#B8CCC4"; g.fillText('sign = "ИРА ПИЦЦА КОИН"', 50, 216);
+    if (p < 3) { g.font = "15px Rubik, Arial, sans-serif"; g.fillStyle = "#8FA3AD"; g.fillText("Каждый выполненный заказ зажигает одну лампочку. Каждые три — новый приём со строками.", 50, 250); }
+    SIGN_CODE.forEach(([need, code, out], i) => {
+      if (p < need) return;
+      const x = i % 2 ? 500 : 50, y = 250 + Math.floor(i / 2) * 28;
+      g.font = `14px ${MONO}`; g.fillStyle = "#F4C542"; g.fillText(code, x, y); const w = g.measureText(code + " ").width;
+      g.fillStyle = "#E9F2EC"; g.fillText("→ " + out, x + w, y);
+    });
+    if (boss) banner("ВЫВЕСКА ГОРИТ!", boss, 480, 100);
+  }
+  // ---------- сцена 4-й серии: склад начинок — круги Иры и Лёни ----------
+  // Каждый заказ кладёт начинку на круги: только Ира — слева, оба — в середине, только Лёня — справа.
+  // Пройден приём — на кругах появляется его знак: & (общее), - (разность), | и ^ (вместе и только у одного).
+  const VL = 385, VR = 575, VY = 190, VRAD = 180;
+  const CHIPS = S4.slice(0, 18).map((o, k) => ({ word: o.layer.toLowerCase(), x: [300, 480, 660][k % 3], y: 100 + 36 * Math.floor(k / 3), side: k % 3 }));
+  const CHIP_COL = [["#F8D9CF", "#D8432E"], ["#F4C542", "#C99A1E"], ["#D4ECDD", "#2E8B57"]];
+  function circle(x) { g.beginPath(); g.arc(x, VY, VRAD, 0, Math.PI * 2); }
+  function tagAt(text, x, y, alpha, bg = "#23201C", fg = "#F4C542") {
+    g.globalAlpha = alpha; g.font = `700 15px ${MONO}`; g.textAlign = "center"; g.textBaseline = "middle";
+    const w = g.measureText(text).width + 20; g.fillStyle = bg; rr(x - w / 2, y - 14, w, 28, 14); g.fill(); g.fillStyle = fg; g.fillText(text, x, y + 1); g.globalAlpha = 1;
+  }
+  function storeFrame() {
+    const p = prog(4), a = layers(anim[4], p, 480, VY);
+    g.fillStyle = "#F3E9D2"; g.fillRect(0, 0, W, H);
+    g.fillStyle = "#E6D6B4"; for (let y = 34; y < H; y += 70) g.fillRect(0, y, W, 3);                       // полки склада
+    g.fillStyle = "rgba(216,67,46,.10)"; circle(VL); g.fill();
+    g.fillStyle = "rgba(46,139,87,.10)"; circle(VR); g.fill();
+    const done = (k) => p >= k;                                                                              // пройден приём, который кончается заказом k
+    if (done(12)) { g.save(); circle(VL); g.clip(); g.fillStyle = "rgba(244,197,66,.38)"; circle(VR); g.fill(); g.restore(); }   // & — общее
+    if (done(15)) { g.save(); circle(VL); g.clip(); g.beginPath(); g.rect(0, 0, W, H); g.arc(VR, VY, VRAD, 0, Math.PI * 2, true); g.fillStyle = "rgba(216,67,46,.16)"; g.fill("evenodd"); g.restore(); }   // - — только Ира
+    g.lineWidth = 3; g.strokeStyle = "#D8432E"; circle(VL); g.stroke(); g.strokeStyle = "#2E8B57"; circle(VR); g.stroke();
+    if (done(18)) { g.save(); g.lineWidth = 7; g.strokeStyle = `rgba(201,154,30,${0.55 + 0.25 * Math.sin(tick / 12)})`; g.beginPath(); g.arc(VL, VY, VRAD + 6, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.arc(VR, VY, VRAD + 6, 0, Math.PI * 2); g.stroke(); g.restore(); }
+    // подписи кругов
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.font = "22px 'Rubik Mono One', Impact, sans-serif"; g.fillStyle = "#D8432E"; g.fillText("ИРА", 110, 160); g.fillStyle = "#2E8B57"; g.fillText("ЛЁНЯ", 850, 160);
+    g.font = "15px Rubik, Arial, sans-serif"; g.fillStyle = "#6B6358"; g.fillText("любит", 110, 186); g.fillText("любит", 850, 186);
+    // знаки приёмов
+    if (done(12)) tagAt("ira & lenya", 480, 352, Math.min(1, (p - 11) || 1));
+    if (done(15)) tagAt("ira - lenya", 110, 230, 1, "#D8432E", "#FFFDF6");
+    if (done(18)) { tagAt("ira | lenya", 480, 28, 1); tagAt("ira ^ lenya", 850, 230, 1, "#2E8B57", "#FFFDF6"); }
+    // начинки
+    CHIPS.forEach((c, k) => {
+      const t = a(k + 1); if (!t) return;
+      const y = c.y - (1 - t) * 40; g.globalAlpha = t;
+      g.font = "600 15px Rubik, Arial, sans-serif"; const w = Math.max(64, g.measureText(c.word).width + 22);
+      const [bg, line] = CHIP_COL[c.side]; g.fillStyle = bg; rr(c.x - w / 2, y - 14, w, 28, 14); g.fill(); g.lineWidth = 2; g.strokeStyle = line; g.stroke();
+      g.fillStyle = "#23201C"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(c.word, c.x, y + 1); g.globalAlpha = 1;
+    });
+    if (p === 0) { g.font = "16px Rubik, Arial, sans-serif"; g.fillStyle = "#6B6358"; g.textAlign = "center"; g.fillText("Каждый выполненный заказ кладёт начинку на круги", 480, VY); }
+    // босс: золотая карта
+    if (a(19)) { const t = a(19), x = 836, y = 62 - (1 - t) * 50; g.globalAlpha = t;
+      g.save(); g.translate(x, y); g.rotate(-0.12 + 0.03 * Math.sin(tick / 15));
+      const gr = g.createLinearGradient(-60, -36, 60, 36); gr.addColorStop(0, "#FFE38A"); gr.addColorStop(0.5, "#F4C542"); gr.addColorStop(1, "#C99A1E");
+      g.fillStyle = gr; rr(-62, -38, 124, 76, 10); g.fill(); g.strokeStyle = "#9E7A12"; g.lineWidth = 2; g.stroke();
+      g.fillStyle = "#23201C"; g.font = "12px 'Rubik Mono One', Impact, sans-serif"; g.textAlign = "left"; g.fillText("ЗОЛОТАЯ", -50, -14); g.fillText("КАРТА", -50, 4);
+      g.font = `700 12px ${MONO}`; g.fillText("№ 0008", -50, 24); g.font = "22px sans-serif"; g.textAlign = "center"; g.fillText("★", 40, -14);
+      g.restore(); g.globalAlpha = 1;
+      banner("МНОЖЕСТВА ОСВОЕНЫ!", t, 480, VY); }
+  }
+
   function frame() {
     tick++;
     if (view === 0) pizzaFrame();
     else {
       const sx = shake > 0 ? Math.sin(tick * 1.7) * 8 * shake : 0; if (shake > 0) shake = Math.max(0, shake - 0.04);
-      g.save(); g.translate(sx, 0); (view === 1 ? cityFrame : roadFrame)(); g.restore();
+      g.save(); g.translate(sx, 0); [null, cityFrame, roadFrame, signFrame, storeFrame][view](); g.restore();
       drawSparks();
     }
     requestAnimationFrame(frame);
@@ -1585,6 +2211,7 @@ window.ReadInput = (function () {
   // прогрев Python: первый запуск Skulpt медленнее остальных
   (async () => {
     if (!window.Sk) { $("py-status").textContent = "Python не загрузился. Проверь интернет и обнови страницу."; return; }
+    fixStrMethods(Sk);
     await runPy("print(1)", "", 2000);
     pyReady = true; $("py-status").textContent = "Python готов. Пиши программу прямо в заказе.";
   })();
